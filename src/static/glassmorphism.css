@@ -1,0 +1,544 @@
+/* ============================================================
+   Nocturne Glassmorphism — 夜航玻璃拟态设计系统
+   玻璃无色，颜色属于背景场景。深墨夜景 + 柔和光源光斑。
+   ============================================================ */
+
+:root {
+  /* 夜景底色 */
+  --night-bg: #0B1322;
+  --night-deep: #060A13;
+  --night-lift: #16233A;
+
+  /* 光源光斑 */
+  --light-well-bright: rgba(124,156,196,0.28);
+  --light-well-deep: rgba(51,81,122,0.35);
+  --light-well-warm: rgba(228,184,99,0.12);
+
+  /* 玻璃表面（永远无色） */
+  --glass-bg: rgba(255,255,255,0.06);
+  --glass-bg-2: rgba(255,255,255,0.08);
+  --glass-bg-3: rgba(255,255,255,0.12);
+  --glass-bg-hover: rgba(255,255,255,0.12);
+  --glass-bg-hover-2: rgba(255,255,255,0.15);
+
+  /* 边框 */
+  --glass-border: rgba(255,255,255,0.15);
+  --glass-border-hover: rgba(255,255,255,0.30);
+
+  /* 模糊与饱和 */
+  --glass-blur: 40px;
+  --glass-blur-lg: 60px;
+  --glass-saturate: 180%;
+
+  /* 方向性阴影（光从上方） */
+  --glass-shadow: 0 16px 40px rgba(3,7,18,0.5), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(2,6,16,0.35);
+  --glass-shadow-hover: 0 24px 64px rgba(3,7,18,0.6), inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -1px 0 rgba(2,6,16,0.35);
+  --glass-shadow-sm: 0 8px 24px rgba(3,7,18,0.45), inset 0 1px 0 rgba(255,255,255,0.18);
+  --glass-shadow-focus: 0 0 0 3px rgba(228,184,99,0.18), 0 8px 24px rgba(3,7,18,0.45);
+
+  /* 唯一强调色 — 香槟金 */
+  --champagne: #E4B863;
+  --champagne-light: #F3DCA8;
+  --champagne-bg: rgba(228,184,99,0.15);
+  --champagne-border: rgba(228,184,99,0.40);
+
+  /* 文字 */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255,255,255,0.80);
+  --text-muted: rgba(255,255,255,0.50);
+  --text-faint: rgba(255,255,255,0.40);
+
+  /* 动效 */
+  --spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 500ms;
+  --dur-fast: 300ms;
+
+  /* 月光色（图表线/进度条） */
+  --moonlight: #7C9CC4;
+  --moonlight-deep: #33517A;
+}
+
+/* ============================================================
+   基础：深墨夜景背景 + 光源光斑 + 噪点
+   ============================================================ */
+
+.glass-scene {
+  background-color: var(--night-bg);
+  background-image:
+    radial-gradient(640px circle at 85% 10%, var(--light-well-bright), transparent 60%),
+    radial-gradient(560px circle at 10% 90%, var(--light-well-deep), transparent 60%),
+    radial-gradient(400px circle at 50% 50%, var(--light-well-warm), transparent 60%);
+  position: relative;
+}
+
+/* 噪点纹理叠加（2.5% SVG feTurbulence） */
+.glass-grain::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: 10000;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   玻璃面板（三层结构）
+   ============================================================ */
+
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow);
+  transition: all var(--dur) var(--spring);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 内发光层 */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.12), transparent);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.glass-panel:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--glass-shadow-hover);
+  background: var(--glass-bg-hover);
+}
+
+/* 小号玻璃面板 */
+.glass-panel-sm {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow-sm);
+  transition: all var(--dur) var(--spring);
+  position: relative;
+}
+
+.glass-panel-sm:hover {
+  border-color: var(--glass-border-hover);
+  background: var(--glass-bg-hover);
+}
+
+/* ============================================================
+   玻璃按钮
+   ============================================================ */
+
+.glass-btn {
+  background: var(--glass-bg-2);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  color: var(--text-primary);
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--dur) var(--spring);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-btn:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+}
+
+.glass-btn:active {
+  transform: scale(0.97);
+}
+
+/* 香槟金强调按钮（唯一强调色） */
+.glass-btn-champagne {
+  background: var(--champagne-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--champagne-border);
+  border-radius: 16px;
+  color: var(--champagne-light);
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--dur) var(--spring);
+  box-shadow: 0 4px 20px rgba(228,184,99,0.15), inset 0 1px 0 rgba(243,220,168,0.35);
+}
+
+.glass-btn-champagne:hover {
+  background: rgba(228,184,99,0.22);
+  border-color: rgba(228,184,99,0.55);
+}
+
+.glass-btn-champagne:active {
+  transform: scale(0.97);
+}
+
+/* 小号按钮 */
+.glass-btn-sm {
+  background: var(--glass-bg);
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--dur) var(--spring);
+}
+
+.glass-btn-sm:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  color: var(--text-primary);
+}
+
+.glass-btn-sm:active {
+  transform: scale(0.97);
+}
+
+.glass-btn-sm.active {
+  background: var(--champagne-bg);
+  border-color: var(--champagne-border);
+  color: var(--champagne-light);
+}
+
+/* ============================================================
+   玻璃输入框
+   ============================================================ */
+
+.glass-input {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  color: var(--text-primary);
+  padding: 12px 18px;
+  font-size: 15px;
+  transition: all var(--dur) var(--spring);
+  outline: none;
+  width: 100%;
+}
+
+.glass-input::placeholder {
+  color: var(--text-faint);
+}
+
+.glass-input:focus {
+  border-color: rgba(255,255,255,0.50);
+  background: rgba(255,255,255,0.10);
+  box-shadow: var(--glass-shadow-focus);
+}
+
+/* ============================================================
+   玻璃 KPI 卡片
+   ============================================================ */
+
+.glass-kpi {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow-sm);
+  padding: 16px 20px;
+  transition: all var(--dur) var(--spring);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-kpi::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.10), transparent);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.glass-kpi:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--glass-shadow);
+  background: var(--glass-bg-hover);
+}
+
+.glass-kpi .kpi-value {
+  color: var(--champagne);
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.glass-kpi .kpi-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ============================================================
+   玻璃工具栏
+   ============================================================ */
+
+.glass-toolbar {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid var(--glass-border);
+  transition: all var(--dur) var(--spring);
+}
+
+/* ============================================================
+   玻璃标签页
+   ============================================================ */
+
+.glass-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--text-muted);
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--dur) var(--spring);
+}
+
+.glass-tab:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+}
+
+.glass-tab.active {
+  background: var(--glass-bg-2);
+  border-color: var(--glass-border);
+  color: var(--text-primary);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+/* ============================================================
+   玻璃进度条
+   ============================================================ */
+
+.glass-progress-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 8px;
+  overflow: hidden;
+  height: 6px;
+}
+
+.glass-progress-fill {
+  background: linear-gradient(90deg, var(--moonlight-deep), var(--moonlight));
+  border-radius: 8px;
+  height: 100%;
+  transition: width var(--dur) var(--spring);
+}
+
+/* ============================================================
+   玻璃状态指示器
+   ============================================================ */
+
+.glass-status {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 8px 16px;
+  transition: all var(--dur) var(--spring);
+}
+
+.glass-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* ============================================================
+   玻璃 Toast
+   ============================================================ */
+
+.glass-toast {
+  background: var(--glass-bg-3);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  color: var(--text-primary);
+  padding: 14px 24px;
+  transition: all var(--dur) var(--spring);
+}
+
+/* ============================================================
+   过场动画
+   ============================================================ */
+
+.glass-intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  transition: opacity 1.2s var(--spring);
+  pointer-events: none;
+}
+
+.glass-intro-overlay.fade-out {
+  opacity: 0;
+}
+
+.glass-intro-caption {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 20px rgba(0,0,0,0.8);
+  opacity: 0;
+  transition: opacity 600ms var(--spring);
+  text-align: center;
+  max-width: 80%;
+}
+
+.glass-intro-caption.show {
+  opacity: 1;
+}
+
+.glass-intro-progress {
+  position: fixed;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 3px;
+  background: rgba(255,255,255,0.10);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.glass-intro-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--moonlight), var(--champagne));
+  border-radius: 4px;
+  width: 0%;
+  transition: width 200ms linear;
+}
+
+.glass-intro-skip {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  pointer-events: auto;
+}
+
+.glass-intro-logo {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 800ms var(--spring);
+  pointer-events: none;
+}
+
+.glass-intro-logo.show {
+  opacity: 1;
+}
+
+.glass-intro-logo .logo-main {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: var(--text-primary);
+  text-shadow: 0 0 40px rgba(228,184,99,0.30);
+}
+
+.glass-intro-logo .logo-main .accent {
+  color: var(--champagne);
+}
+
+.glass-intro-logo .logo-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  letter-spacing: 4px;
+  margin-top: 8px;
+}
+
+.glass-intro-logo .logo-model {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  font-size: 12px;
+  color: var(--text-faint);
+  letter-spacing: 2px;
+}
+
+/* ============================================================
+   分隔线
+   ============================================================ */
+
+.glass-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 16px 0;
+}
+
+/* ============================================================
+   扫光高光（hover 时光线扫过）
+   ============================================================ */
+
+.glass-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glass-sweep::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+  transform: skewX(-20deg);
+  transition: transform 700ms ease-out;
+}
+
+.glass-panel:hover .glass-sweep::after,
+.glass-kpi:hover .glass-sweep::after {
+  transform: skewX(-20deg) translateX(300%);
+}
+
+/* ============================================================
+   文字层级
+   ============================================================ */
+
+.glass-text-primary { color: var(--text-primary); }
+.glass-text-secondary { color: var(--text-secondary); }
+.glass-text-muted { color: var(--text-muted); }
+.glass-text-champagne { color: var(--champagne); }
+.glass-text-champagne-light { color: var(--champagne-light); }
+.glass-text-moonlight { color: var(--moonlight); }

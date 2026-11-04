@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离子注入工序数据看板 · Fab Monitor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0b1220; color: #dbe4f0; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between;
+           padding: 14px 22px; background: linear-gradient(90deg,#10203a,#0e1a2e); border-bottom: 1px solid #1d3352; }
+  header h1 { font-size: 20px; font-weight: 600; color: #7fd0ff; letter-spacing: 1px; }
+  header .sub { color: #7893b5; font-size: 12px; margin-top: 3px; }
+  header .right { text-align: right; color: #8fa9c9; font-size: 12px; line-height: 1.7; }
+  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 14px 22px; }
+  .card { background: #12203a; border: 1px solid #1d3352; border-radius: 10px; padding: 14px 16px; }
+  .card .t { color: #7e97b8; font-size: 12px; margin-bottom: 8px; }
+  .card .v { font-size: 26px; font-weight: 700; color: #eaf2ff; font-family: Consolas, monospace; }
+  .card .u { color: #6f8bab; font-size: 12px; }
+  .card .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .st-RUNNING { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+  .st-IDLE    { background: #f1c40f; }
+  .st-DOWN    { background: #e74c3c; box-shadow: 0 0 8px #e74c3c; animation: blink 1.2s infinite; }
+  .st-PM      { background: #3498db; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 22px 12px; }
+  .chart-wrap { background: #12203a; border: 1px solid #1d3352; border-radius: 10px; padding: 12px 14px; }
+  .chart-wrap h3 { font-size: 13px; color: #9db7d8; font-weight: 600; margin-bottom: 6px; }
+  .chart-wrap h3 small { color: #5c7392; font-weight: 400; margin-left: 8px; }
+  .cards2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; padding: 0 22px 14px; }
+  .table-wrap { background: #12203a; border: 1px solid #1d3352; border-radius: 10px; padding: 12px 14px; overflow: auto; }
+  .table-wrap h3 { font-size: 13px; color: #9db7d8; font-weight: 600; margin-bottom: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { padding: 6px 8px; text-align: center; border-bottom: 1px solid #1a2c48; white-space: nowrap; }
+  th { color: #7e97b8; font-weight: 600; }
+  tr:hover td { background: #16294a; }
+  .badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .b-pass { background: #1d5c3a; color: #7ff0b0; }
+  .b-fail { background: #6e2b24; color: #ff9d92; }
+  .b-warn { background: #66561c; color: #ffd978; }
+  .b-err  { background: #7a2430; color: #ff9d9d; }
+  .b-info { background: #1d3a66; color: #9dc3ff; }
+  .ov { color: #ff9d92; font-weight: 700; }
+  .mono { font-family: Consolas, monospace; }
+  footer { padding: 10px 22px 18px; color: #4f6584; font-size: 12px; }
+  a { color: #7fd0ff; text-decoration: none; }
+  .machine-anim { background: #12203a; border: 1px solid #1d3352; border-radius: 10px; padding: 14px 16px; margin: 0 22px 12px; }
+  .machine-anim h3 { font-size: 13px; color: #9db7d8; font-weight: 600; margin-bottom: 8px; }
+  .machine-anim h3 small { color: #5c7392; font-weight: 400; margin-left: 8px; font-family: Consolas, monospace; }
+  .machine-svg { width: 100%; height: 440px; display: block; }
+  @keyframes op-breathe { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
+  @keyframes conveyor-move { to { stroke-dashoffset: -36; } }
+  .conveyor-line { animation: conveyor-move 0.8s linear infinite; }
+  @keyframes alarm-blink { 50% { opacity: .3; } }
+  .alarm-icon { animation: alarm-blink 1s infinite; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⚛ 离子注入工序数据看板</h1>
+    <div class="sub">晶圆制造 Fab Monitor · 中束流离子注入机 IMP-MC-01 · 数据链路 MQTT → MySQL → 本看板</div>
+  </div>
+  <div class="right">
+    <a href="/3d" style="color:#4dc3ff;text-decoration:none;font-size:13px;border:1px solid #2a5a8c;padding:4px 12px;border-radius:4px;display:inline-block;margin-bottom:6px;">3D 交互模型 →</a>
+    <div id="now">--</div>
+    <div id="mstate-line">状态 --</div>
+  </div>
+</header>
+
+<section class="cards">
+  <div class="card">
+    <div class="t">机台状态 (E10)</div>
+    <div class="v"><span class="dot" id="st-dot"></span><span id="st-text">--</span></div>
+    <div class="u" id="st-reason">--</div>
+  </div>
+  <div class="card"><div class="t">今日注入产量（片）</div><div class="v" id="k-today">--</div><div class="u">累计 <span id="k-total">--</span> 片</div></div>
+  <div class="card"><div class="t">近 7 天平均均匀度</div><div class="v" id="k-unif">--</div><div class="u">规格 ≤ 2.5%</div></div>
+  <div class="card"><div class="t">近 7 天良率</div><div class="v" id="k-pass">--</div><div class="u">FAIL <span id="k-fail">--</span> 片</div></div>
+  <div class="card"><div class="t">未处理报警</div><div class="v" id="k-alarm">--</div><div class="u" id="k-lot">--</div></div>
+</section>
+
+<section class="machine-anim">
+  <h3>离子注入产线实时动画 <small id="anim-phase">初始化中...</small></h3>
+  <svg class="machine-svg" id="machine-svg" viewBox="0 0 1100 440" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <filter id="beam-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2.5" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <linearGradient id="housing-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0f1e35"/><stop offset="100%" stop-color="#0a1525"/>
+      </linearGradient>
+      <radialGradient id="wafer-grad" cx="35%" cy="30%">
+        <stop offset="0%" stop-color="#f0f4fa"/>
+        <stop offset="40%" stop-color="#c0d0e4"/>
+        <stop offset="100%" stop-color="#7888a8"/>
+      </radialGradient>
+    </defs>
+    <!-- ===== 上层：原理演示（y=0-190） ===== -->
+    <text x="550" y="10" fill="#5c7392" font-size="9" text-anchor="middle">— 离子注入原理演示 —</text>
+    <!-- 左侧：上一道工序产线 -->
+    <text x="40" y="48" fill="#5c7392" font-size="10" text-anchor="middle">上一道工序</text>
+    <rect x="5" y="55" width="70" height="5" rx="2" fill="#1a2c48"/>
+    <line x1="7" y1="57" x2="73" y2="57" stroke="#2a4a6a" stroke-width="2" stroke-dasharray="8,4" class="conveyor-line"/>
+    <text x="40" y="78" fill="#4f6584" font-size="8" text-anchor="middle">产线输送 →</text>
+    <!-- 入口晶舟 A -->
+    <text x="112" y="48" fill="#9db7d8" font-size="10" text-anchor="middle" font-weight="600">入口晶舟</text>
+    <text x="112" y="60" fill="#5c7392" font-size="8" text-anchor="middle">Cassette A · 缓冲中继</text>
+    <rect x="87" y="68" width="50" height="110" rx="4" fill="#0a1525" stroke="#2a4a6a" stroke-width="1.2"/>
+    <g id="cass-a-slots"></g>
+    <text x="112" y="190" fill="#5c7392" font-size="8" text-anchor="middle" id="cass-a-count">待加工: 8/8 片</text>
+    <!-- 晶舟A → 机器 输送段 -->
+    <line x1="137" y1="120" x2="195" y2="120" stroke="#2a4a6a" stroke-width="2" stroke-dasharray="6,3" class="conveyor-line"/>
+    <polygon points="192,115 202,120 192,125" fill="#2a4a6a"/>
+    <!-- 离子注入机原理演示框（不含电脑，纯原理展示） -->
+    <rect id="machine-housing" x="200" y="15" width="260" height="160" rx="14" fill="url(#housing-grad)" stroke="#1d3352" stroke-width="1.5"/>
+    <rect x="200" y="95" width="18" height="30" rx="3" fill="#0a1525" stroke="#2a4a6a" stroke-width="0.8"/>
+    <path id="ion-source" d="M305,18 L355,18 L348,48 L312,48 Z" fill="#1a3050" stroke="#4dc3ff" stroke-width="1.2"/>
+    <text x="330" y="38" fill="#4dc3ff" font-size="8" text-anchor="middle" font-family="Consolas" font-weight="bold">ION SOURCE</text>
+    <g id="beam-group" opacity="0" filter="url(#beam-glow)">
+      <line x1="322" y1="48" x2="322" y2="115" stroke="#4dc3ff" stroke-width="1" opacity="0.5"/>
+      <line x1="327" y1="48" x2="327" y2="115" stroke="#7fd0ff" stroke-width="1.5" opacity="0.8"/>
+      <line x1="330" y1="48" x2="330" y2="115" stroke="#4dc3ff" stroke-width="2" opacity="1"/>
+      <line x1="333" y1="48" x2="333" y2="115" stroke="#7fd0ff" stroke-width="1.5" opacity="0.8"/>
+      <line x1="338" y1="48" x2="338" y2="115" stroke="#4dc3ff" stroke-width="1" opacity="0.5"/>
+    </g>
+    <g id="beam-particles"></g>
+    <circle cx="330" cy="120" r="16" fill="none" stroke="#2a4a6a" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="330" y="170" fill="#4f6584" font-size="9" text-anchor="middle" font-family="Consolas">IMP-MC-01 · 中束流离子注入机</text>
+    <!-- 报警指示器 -->
+    <g id="alarm-indicator" opacity="0">
+      <polygon points="430,12 458,55 402,55" fill="#ffd978" stroke="#e6b800" stroke-width="2" class="alarm-icon"/>
+      <text x="430" y="48" fill="#0b1220" font-size="16" text-anchor="middle" font-weight="bold">!</text>
+      <text id="alarm-text" x="430" y="68" fill="#ffd978" font-size="9" text-anchor="middle" font-weight="bold">WARN</text>
+    </g>
+    <!-- 晶圆 -->
+    <g id="wafer-group" transform="translate(112,120)">
+      <ellipse cx="0" cy="0" rx="10" ry="10" fill="url(#wafer-grad)" stroke="#7fd0ff" stroke-width="0.8"/>
+      <rect x="-4" y="8" width="8" height="3" fill="#0b1220"/>
+      <ellipse cx="-3" cy="-3" rx="3.5" ry="2.5" fill="#ffffff" opacity="0.35"/>
+      <text id="wafer-label" x="0" y="3" fill="#0b1220" font-size="7" text-anchor="middle" font-weight="bold">Si</text>
+    </g>
+    <text id="wafer-result" x="330" y="88" fill="none" font-size="10" text-anchor="middle" font-weight="bold"></text>
+    <!-- 机器 → 质检台 输送段 -->
+    <line x1="460" y1="120" x2="498" y2="120" stroke="#2a4a6a" stroke-width="2" stroke-dasharray="6,3" class="conveyor-line"/>
+    <polygon points="495,115 505,120 495,125" fill="#2a4a6a"/>
+    <!-- 质检台 QC Station -->
+    <rect id="qc-housing" x="500" y="80" width="140" height="95" rx="8" fill="url(#housing-grad)" stroke="#1d3352" stroke-width="1.2"/>
+    <text x="570" y="95" fill="#9db7d8" font-size="9" text-anchor="middle" font-weight="600">质检台</text>
+    <text x="570" y="105" fill="#5c7392" font-size="7" text-anchor="middle">QC Inspection</text>
+    <rect x="540" y="110" width="60" height="22" rx="2" fill="#0a1525" stroke="#2a4a6a" stroke-width="0.5"/>
+    <text id="qc-result" x="570" y="125" fill="none" font-size="9" text-anchor="middle" font-weight="bold"></text>
+    <circle id="qc-light" cx="570" cy="145" r="4" fill="#1a2c48" stroke="#2a4a6a" stroke-width="0.5"/>
+    <circle cx="570" cy="120" r="13" fill="none" stroke="#2a4a6a" stroke-width="0.8" stroke-dasharray="3,3"/>
+    <text x="570" y="170" fill="#4f6584" font-size="8" text-anchor="middle">粒度/均匀度检测</text>
+    <text x="640" y="112" fill="#5c7392" font-size="6" text-anchor="start">PASS→</text>
+    <text x="640" y="140" fill="#ff9d92" font-size="6" text-anchor="start">FAIL↓</text>
+    <!-- 质检台 → 晶舟B（PASS路径） -->
+    <line x1="640" y1="120" x2="688" y2="120" stroke="#2a4a6a" stroke-width="2" stroke-dasharray="6,3" class="conveyor-line"/>
+    <polygon points="685,115 695,120 685,125" fill="#2a4a6a"/>
+    <!-- 质检台 → 废料仓（FAIL路径·向下分支） -->
+    <line x1="570" y1="135" x2="570" y2="198" stroke="#5a2020" stroke-width="1.5" stroke-dasharray="4,3" class="conveyor-line"/>
+    <polygon points="565,192 575,192 570,200" fill="#5a2020"/>
+    <!-- 废料收集仓（位于质检台正下方，不与出口晶舟重叠） -->
+    <text x="570" y="194" fill="#ff9d92" font-size="9" text-anchor="middle" font-weight="600">废料收集仓</text>
+    <rect x="545" y="200" width="50" height="50" rx="4" fill="#1a0e0e" stroke="#5a2020" stroke-width="1.2"/>
+    <g id="scrap-slots"></g>
+    <text x="570" y="258" fill="#5c7392" font-size="8" text-anchor="middle" id="scrap-count">废料: 0 片</text>
+    <!-- 出口晶舟 B -->
+    <text x="717" y="48" fill="#9db7d8" font-size="10" text-anchor="middle" font-weight="600">出口晶舟</text>
+    <text x="717" y="60" fill="#5c7392" font-size="8" text-anchor="middle">Cassette B · 检测完好</text>
+    <rect x="692" y="68" width="50" height="110" rx="4" fill="#0a1525" stroke="#2a4a6a" stroke-width="1.2"/>
+    <g id="cass-b-slots"></g>
+    <text x="717" y="190" fill="#5c7392" font-size="8" text-anchor="middle" id="cass-b-count">出口: 0/8 片</text>
+    <!-- 右侧：下一道工序产线 -->
+    <text x="785" y="48" fill="#5c7392" font-size="10" text-anchor="middle">下一道工序</text>
+    <rect x="745" y="55" width="70" height="5" rx="2" fill="#1a2c48"/>
+    <line x1="747" y1="57" x2="813" y2="57" stroke="#2a4a6a" stroke-width="2" stroke-dasharray="8,4" class="conveyor-line"/>
+    <text x="785" y="78" fill="#4f6584" font-size="8" text-anchor="middle">产线输送 →</text>
+
+    <!-- ===== 下层：真实机台+电脑+操作员（y=200-350） ===== -->
+    <line x1="0" y1="260" x2="1100" y2="260" stroke="#1a2c48" stroke-width="1" stroke-dasharray="10,5"/>
+    <text x="550" y="270" fill="#5c7392" font-size="9" text-anchor="middle">— 机台现场 —</text>
+    <!-- 真实离子注入机机台图片（去背景） -->
+    <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAB7CAYAAADOgb2OAABhX0lEQVR4nO19CXxcV3nvd87dZ9EuWZLXxLGTyImBOBRICrIpUJJXwlaJAi0kLDF7mkL7WmixBX1QltBSQngJ0IRCWKTH0kDTAqGxgYQQYrLaSbzFu2Tt0miWu53zft+590hX45nRSBrJcqL/z+MZzdzl3OX877d/pGXzuzksYxnLWErwOVClKhlzq5PmVb/770//D+zYQaCri8FzHPRsD2AZy1hGBJx7QFTFNLQjbec3v/J3//3pXwAsk5XEMmEtYxlLBJxxjxNNbapPPtV+xfptP/rm/97d0dGhACxLVhLLhLWMZSwRstKthFpTZfzX61576Yu+8cUbj7S371B7enr8sz22pQT1bA9gGct4joMjqGqodVXarQ/f89kPEUIclKx6erq8sz24pQaybHRfxjLOFjhjjINlxWlzU+IfH/jPT/0DzkkA9IORZWdYASyrhMtYxlkBZwAKtSwLkjG188G7P/UP0L5DBb5MVqWwTFjLWMZig3OPcYUapt576UWtr3189xd6GG9XYXeXB2RZsiqFZcJaxjIWERzDFhRdbahNHFvfGt/6429+9CdoXAfYvWyvKgPLhLWMZSwiWSmapcYt7Z5XverSK37xo3/aj2S1GyWrZZSFZS/hMpax8OCMcV9RDXXliuRdn/mbV75p27ZtOejoUHYvewJnhWUJaxnnFBjnwBhKK3COgAtXYCxRpTbUxz770H9/6rXbtm2zd+zYQWE5xmrWWA5rWMY5A845mIbmA2HU8xjx/XPBE0gpVShf01z7wQd/+ukv+2wHBdjJl8MW5oZlCWsZ5wwopfCSK56//9LNrf5F61tB1zRBYksSnPs+oxi2MHHxBa1/9pv/QrJqV4M0m2VP4FyxTFjLOCfAw5v1yWOpi0+7rapLG4BgiOVS5CvOPaIYSlXS7K2u1a68p+fj3Vu2XK8tewLnj2XCWsY5AYI1V3yAVc8bhov++BlYeekAMJ8L0lpqnkBOdTVmKb999dZNL3/4vz//GHoC9+y5zT3bY3s2YNlLuIxzBChKKdDU8ASsbD0GIyPnA0ALLDFPoKfpltZYF7v3mvPP/5OuT2/PLOcEVhbLhLWMcwMEPYQAL1xTDVtfvBZ+7zfCD5dOOTvOOeOGldASpvKvv//5P32EEOIGZLVcbaGSWFYJl7FkQKZEqTNehAPnlMB5XOHrh21oymWB0yBTmESXW/RRi6gFrmoGPX9Vzaef+vUXbiCEeAA76DJZVR7LEtYyFh2SYHjwHtRX4QCMcUIVqiDpiBTg8F2sg78rAKe/PU4GvzMIp5QYMJLABQgassQGCAHGGBAivpqyb8kdVRocfAZESSZjUF8d+4tdP+z6FgB6Anf5AGTpyH/PIiwT1jIqDkEUfIqUJCEJ3uGcBoxCCSWKWFDVVNA0BSxDgUwm4woWQhKSRVZC4qGaqvVB1eknnab6E76iJk3VzzHHYZx7uk5jjEFaVXXLdR3N9Qm4YcJLQGAcaJTEQszZyyg8gbpqqjCwpqXuTf/zgx33imoLIs1miXkCnkVYJqxlzAVckpIkJPEl5xTlnIBiAnpQFBVUlYKqKII0NI2ArtIxhbIBy7T6amtijAI80lgXO7x2ZeOBp54+vC/NgFkAkAUAfEdcuKkx6UzosL3zj1rv+s6d/2X3Hu3/0vbXve/hx546Ulur13zj+08+3v6i+hePDPR9fXBwtC7nKWRkghCHaZDOMrA9FXIugOfjOAMJLBDPAk8jFSJZeRKZ8ASCqlYnjKcvu3Rt53e/8pePTZHVMhYSy4S1jDMQSiFIQ5O2IfGHYCdUwUDxfQaUKkRRVVBURUx4TaWg0CBvRtfVwbrq+BAlbD8QcqCmtrY/bpEj1Unt+FV/eOX+17xmy5iqEBd35WEo5QwxVXzkmRq9Yf3oZ67NOL1Gkhx1/N6uq7fdtXkt/Wh1XfIJ4mTqHn/6qdtGxgYbdINyw/BJdQK36wBjBDxGIOsQyOQIOL4C42kfXN8Ex1fBdgm4rieM+nhwKNYJIqPir4DHpIGNcabpcTURp/c31bL/9d2v/OXocgLz4mGZsJ7raltg/kEnl6AirIAZqG2UICGhOkWpApqqgEIJqArOXd+rq4kpjLnHiKIfbKyrOqobWp+ikPsvXpto1XX26Ze96CVtL33pC4YoIcgD0/CVz053+mzZcr1yxds20b6WFq9n795pi++QH2rPG3MB6K7f39V7+PQzWdMyauHYoc2+q4w9sv/44ccf3/eL4fGJFYxSPITQHC9XRvJhELcAknFBkWgvQxMUKGoMsg6FTMaGrKtBJschnaNguwq4LgPXR++kFCc5I0Sh1Sa5/VM3XvNX3/72LalXv/qDxjvescnbunUH3blzJyfL9awWFMu5hM9ShHZoOWWZUHMwcTioaEk4Z5QQRZiIVFVDiQhZCwxdA0PD6c4yQOBUXVWyX6H8YDIZP6Zr2v7aKmXYqq7d+8dXrmt+/iVNvatXbTrqo4QUimL33PPjlc+cGLmnOnboeZ2dXQ60oxF6K7SHA2lq2sS7uzsYEmHEpl4QnOP8J/yR++5r0kH9g/NWNT/5/V13Xdz9o7vvWlfbnP3Am99yp0343lu7v/e2scHcZVyhfk53lVJbxcPHFB8hSAEByzJgfGwUdF2flPIyWQeop4DvADhgCFUyYyu+TxN0ZUv9z376//7x1S6KhUVOfXt7u4LHvHUrwKZNm3hHR3nHu4yZsUxY5yAiJt1Ad+Foyw74KXC9cVWk3Spo1CagCPsRBVVFSYkiGYGhUzB0tS8eMzKc+Y82r6h/XAG7v76+7tT681qOn9/ccOq1r71yQFOJi3afEqDQ3k53bH2Lvm9frf2qV3kNmsa/y3nrVdddt82eHGcJPPTQQ9ozx/te2PH6P7lfkhR+jxUNurq62Fe+8pWVhPGHNF07bFjqxO7dvzbPX7PuZUkrBiOp8ez+g4csx3G5oqrEAf8Mkzf+rZCpCB70JFKK50UFSg0YGxuDRDwBrueKc5XLZcH3PdBUFVQFfQTCgwmKpvO4ZaZt2++llBxtWtF8X2Yidaq5tXnM8/ij69dfNHzttR39uP1CwListrY2giS2d+9eviyRzR7LKuESRcSbFQpGU542xpkwaIuZzQkRk0/VQFMUUBUClDCImZrv+W6fZeijsXj8ScpzRzUjfnDtqhV2wvTHmutiw3/7kWsfAgBbocRFvU1T0bN2BrdQgA7S3t5GpITU1haobeGEY7B7N+vaHVTM7OjojuWyft2hZwD/jvj4iqO/v58Ch+ZivzuOQ06cONFAKG1GR2FVVc3o8b4+PCmM+b6VsXNM01TqMhcISk+Fzmfks0pRCAsNchz1x8BWhe9oyCJCBaTgcgo+QwN9sLbjeMR20glT0zYwRjb0nz79Cvzt2NETYNs5dvLE8Yn3bP/AQcd2H7fisd7mxoa9dY0Np1taGh947WtfmyGETKP+rq4uMbSOjg7a399Ptm7dCvv27ePd3d3LElkRLBPWWYTw3IdqG4YZBcYk8SfFeYPuLEJV9LQp6GnDpz/akQxdAeAoASjDVQlzRFXokO04+1Y1NwxYpvJErMp6/AUXrxu//u0v6DP0VWnX9QuKOH/319cFHzo6lPb+NvL26y89zzB05Uffyx3o6ADo7OxEUYEB9MDu3WeuH044gahkNMezgU7BovB93/UdhxATso7j+Eghlq7D+Pg4VyilDJ0ACsXBzogpTXmGEQVBXpNkh+SkEAKqqjLXdXkmk+G6roFt2yjiKo7jVqmqc5mmqZdNpFJwzHbg2IlT8OAD2d57fvqL7Huvf/9vdV1/oL6p4QQ4/jOXX3H5oauvvnpcBpjuDk+yJEi8LjvaggcFEllbWxvv6uqSjpDnJJYJa5FIKer+nzRsC8s2xkmKSUBRUsKSKQR8QUpo4FYUciiZiB1QKd9bm4wPxZLJ/c3NdWONVeBecdmlj/3hH16a0TVqF5CMYPu18lOHAu39pB22omkFmvZtEgv3dHcwYZvuBnyi8/fc8APGc7be09Ppt7Vh3aa5TQzPQ+FqV9nLn7Ysok+kMqWWQULUNE3RdV3PZrM+ql2u54GqacIxMDnJQ0T/LiziBcKfiPdCSSt8R/tW8HlKyo1uH/93HZcyjmolnqIgRIJSjOhAMO55HsPx2baN6ic1TbMlnbNB07Tzs7bz5pMne4VXsvfHdw+8730fOGiaRloz9P2u593funLl0frq6oPXXnvtaZTIph4J00Db29spSmTPNRvZMmHNA6GRFm8SoaMhKWGaRhggSSil1PPxXlKCeCQN3f8gDNuouinUR7vLsZqkNWzn7P01NfFUdXXto5TaR7c8f/1IZvjILpXyX/3D3334OjRslxoKQLvS3r5V/LF1ayBodHXJQnE9PuwG2B38N22tAEFGC8syTqlydiK01dKWMt/3uWEYEI/He4eGhk4YhnEBfiftRUgePhruIoiSTPGpHEbJT4MUYsiZhIVk5nMh7bquO7kuXm9VFdMJ7wqKv0swIsLTuO/ieMWzS5jVPNttVFWl0U5nAdJZVC/fN/bkfhzR6K8fuP/E9e9/7yFV055prK1/Juc4j61fu/bou9/97qOohu/evRtf+QdD29t3UDT2P1slsmXCmpPaFvyET0+UkChVFJ8xwJgk09BC9z+HXC7n1NdVOxqlJwnwp6prEiccO/fwhgvWpZtb6kdW1SeOXn/tHz9jmZqds6fHHH6b85quT33GPz04/lLP5+rWrTthYqKXnH/+K9grXjFixKpXb/7zN1312507gXR1YRrIbk/ewFP3cZHnczEYKD5U4pwRjk/+cpcfHhggK6leMq8ViQI9eYlEYiCTyRwJJSHUQxemiN80z8bMhrgg/KPQIRBgwhsbMB7GdoltcpQQXe64DldVjSoKCtwYy6aCotAaRdVqVFW7BB0AI6kxyGQzMDQ86Dz5wcePvvcd7zpUXVt71IqZTySTyf1mIvG7ixsa3G2dnRO7d3exAuq7sJOhwR/5Ex0ZcI7iOU9YMloHaQitFchHDIOSghw1JbDNiPQ2dP9TQUYiUJKjYRuY7wwZhnGwoS5h+W7uicbGxgMxyzzaWqdAMs4+8JI/2PonL3vZxQOUkEmlLaosbb9uutp2/VveQkbuqWUPPvik4jquy3wPr5G/e7d4UpI9e27j73vfvU5fX65P2Nw5h4gpaX6w558O7/sa98FWe3t7xbjLWWc1gMOAJ9ArKIz4echms0KawVc2m63WNK11dHQUTNMkvu8H0k8oS4Z8ID5PqnQlwxz4NMIJiJAKw7sWfsabQp6WaBApQkp4GqryFFVKMvm92LRIkvRBkdumGFyrgGFaYJo1YBg6hncdVBTtGUJIPyH0eE110uMUfl1VV4XOymN/+MIXpm7+yi2PDQwMNGQ1c4Ou6xtyw6Ogpw3g/cN4XoaeMC3vhhs+vI/q+sOJmHl8aHT895dsbjvx3ne84wie02gidmhvFB/hHMNzgbACfSeM/UPPkrxHUXTHa4d3NqUqQSkJbzxT14THjPsOmKaRUVRlIGYo40Dg6fPWtozE48bJbGp838UXrj+yeUvTwddvax9xXJ+oCuFSddv/wN1V9x8YeUV7e1tv8E2HIj1two60aRNv27uX56ttt+7aRch2wru7efqHd+HW0NY1Hdu2bUNx7Ig4iCUWqIhqGhBqtrS0mEiB0j5UDOHk8b/T88NUa2sr6lEFCcvzPDoyMgInTpy4AsMQUD1Em9akVBMGgsmzITJtZjwzgZMjSlqTr9BriBH8qGnK74TNCiPgI8vKdS0LY7mCBxpK2yIsAr23Gsa4ccDsALTv4d81NTWQTCYhZsWYbmgDuqo/YMXjhy+99NL/bGlpSf32t79tGOkdUbPj2ZSu6wrxfA8fpy5zmZMV6ZacZNPCFqooan3WtjFMY4WiqNvGdQ0814WHHtjjvPM3Dx6+4YYPjRNCnwCAoWQy2UMI+V00Zkx6J1GFXOqhFuqzzbAt00gQmP2P+hr+iTcLxunomk7R4yYMpSIeScmqChnVVPVUy4p6qnD7Ed2M3dvUWOWblD3yh3+wJfW6173wtGXqTs524f5iQwguMr3++luVp58+xe97cqyOERjCCdnZ00N7Ojv9SVF9msheVDxCaQPOScxNRSsqjWE7d5SkMpkMqtnc932Ckx0fLvj9QkIQrpCqA9KJEhSSJaqpCM/3AmGK+Sj5QSwWE+vgZwRKh6hvB8Z4BwYHhyCTyZJYLKZVVVW9JBaLvcTxPPjVr371mO/7P9N1/acA8AJbtUcaGvQf+Jyrwk7GXJGkGYwt/OB73OUaOC4mIAFnKSacOKqq6qoCF42MZHDZP0CSdxznVbfeeutV11xzzfjK1tb07t1TpoSI55d2dHQQGWoRqpFLwha25AkrIoKLeCTpaxOZJESkYFAfy5KEeW0i0U0JnNHC/c/siXg8lk3G1ISqwtPA1XvXrmlOg8/2U5U/c9nmyw9/4J1XpjSVpp5QFIy1mXZVbpo2milvG8YjTXnaJmsKsFtvvV48od71ru5YzvVX4zIoSc32uAcHBzEvBh/yZ6zb3d1teUS/6C0dr3t4/uEECwAKbFzXy7KT4Nh37NihEg5t119//W+2b99ecDmc8EhO+EKykupbsSDNuaCQLSxql5IeRPkZxyJ/Z24gPSFh4fc4LsfBPEZxy4p3fMljkMcTqroslUpxTdNITU3NZk3TNudyuWtVVT1u2/bQ7t0PV+u6HkeCNjSKXspJ7gglRIKkqkBQmgcN/rhtx3G4RxhXKaDnkuPfqqo+71e/+tVTe/bsmfjQDTcccRznEV3XD9bW1j6WSCSObt68eeCVr3zlWE9Pj9h+vmFfBL/295N9TU1CIsPvFpPM1KWU/S8ISfwV3DrISQwzV/FyBLltCpKSyP5XFWC+BwrlkIybDiX8lM/JY/U1CYcQ/0nbtofXrVpxctNFTb9551tePfbfP/tZV02Vcc9rXvOnd0d3fDsAfPBd4iNK3XhJqFDdgggANv2CRLxtEpEAz+h2GfM5pTQdTshZi0oNDQ1sMttP7iB8wmuaZvgeWQkAD+/cuTNaNuqsw3VdJFCmWVbZTNLa2orxm/WliHfKvhRE7muL0DFHSlFSbcyXroK/QyfMpCoqkzODL6SNTX4X3Y70MqK6i5IYvjAkAqU2y7Iacrmc5fu+4zjOqr6+Pnrk6FFIVtcT/N20LGEXEzYxTQGNKNOIMSRUMXPk4PB7JC5CSNXY+HjVeGaiVVHUK5ScghkDSHDuQ48+MvLO7dcfjsfjpzK5zI/r6uommmrqD11zzTX7Lr74YrtYUcLFqq6qLnZ9JGE5EtcNw5SDkGIMQPJ8DlRRUaoIAiQVLElCwDI1IMzGizxYVZ3YqxB+IJmM762tig9z8Iaorh5+7SuvtN/4v154nBLiRm/hX4Xvf3sDwG13fCsz3pdRsAzIBzfXKY89Nuw3NRXS23sC1S0vAmBOxy1ireYMEbQ5FbY4BQxaZEyrfFODCnkJ5wJCaMnSLDj/Me4Kg0NN0xAPrEDNmlxi4QdZZFxy/yhdSdKIqqp4T0upK0qyKJHhSzoUHNsGwzQpkjFKQ4SQOGM8nkgktP7+09rBg4eAVqXC8jjiwQWmZYKhG1AX0yBuGqAbhiA+nD/C40g5KOAD1TRpswvyuDBy32eM+GhmRLVXiIpoFGzK5LJN6VwGKKFvyGROwqlTvfDQY48cefc735XWCH08mUye5tz/ZTyROHzx5s2Db3rTm04sVnXVBSGs8MnDfZ9j9SGM2hY+W6R7YeihFL0jQmXjXFwsp66mahyY90xdXdW4aRrPGCqcsAxzb9uGVWMG9L8t50xs7vr4320tFCD5zS+eqbJtfcMFMRjOeK2t4G7ffr1H+bepKtJIuryXvr+bf+lLN/iFIrYrBQf/wztrjti797jFOTeQ1wv9LvJxnkXAQgilfveZCzpRRKkYFW9broioc4+lA/MX14JAOKxOvJAIazJjNnnwuBUKgKBLtJPi5YoSk1QbC0mDOE8kuUnJCANSHVcHNEcRLr7n1dU1CUWPA9csqE7GYePGCwXBofMBHRJIRKcH+yGXSQchGFQFK5YAVdcgblki7g+JzTRMQXKqqqCDCExwRO0NSajIXDh1PQ/jcjkw3+UooRFAYU5ZJzyzmrppIjOBa91Ahobg+Iljqbe/7W3Hqmpr/+MLn//83y+097HihIUDth1P1EpKxOOYOwq6JsqSTGiaOtzUUDtCwBuhFH6zcf3qR00lW6spbtsH3/Pnf7+ydcU4ppHk1yP57E1f3JrJuq9zvY9TaN9Ft0xcSBKJFh7NawvUtimVbfduGMfv7733XjXwF90JU6F8iwDHAS7E8bkhTSdQHQaGnF8AKJ5CpVGBsIaFABbx03QVDvQfgSf2PQXAHDCtKnj5FS+HOkMF2/PAMSh4lILGF5qwMHU8tB2hqidtaeE8lRKWJKOoeiiRL2nJdYQKguuqTNQIU5iL15+kM1nwqA5ZpkJd3ITx/pOAHlP0NDa3Ngh68EkDpO0c9A8OQSpjAzdMODk0DJROBN07Qu8lGt4xiNnUCNTqvnAOoFMD1UzUdIJSQiZqmwAiTCNUiRlnjHiQ9VwW2u0Id7HKPklSXd1EcxlDUZSPlZM7umQIS5CV7fLnta0k61dV7x9J+1+oScYOrFzZ3PfSF6wa+6M/eslQPGbkkM1tJ5iI3/zmNy/L2l6qoaFhvL29XcUIXoB2ilHbmzfXKX0vbfHIyT6dKsQh5BOM7+ZsD+xeUnabhUPha4/GWd+jKOM/J5Aa13haIfzk6cPQMjEIbboKT58Yg5GR01Cz5gIhXfnUB5f4oAuP/yKiDDtaVD2Mqoz5ROaj0R6/d33wsToE98D3MfYsA67riJpk4+kMXLhhPeimhXmUMDo2IapLDAwNwoaLNoJlmkAVAzhFdTDMP9UmyxCC6zhgsxxkgUEa1UUlK9RHJCr0aqIaGVMpmIYhyE18p2FohkY1RcPnGZUpTOHz2EfNknM+uhgnXq0kWbmezxtqY+zNf7LZTybUo3/W+YZbiy3e0bFD6+8HNj7umqquiLjN9/f08ICwgrSDrVt3wJc6b/C3fP6LQVznfLGoIpZ4qM15zJbIR0MD6ZkiT39/v5OsW9GHn9H+thAq7VKC21pl5cYUba1D4Lp4E7yhvhX+jZyEXY4HYyoBG8vmCG9huWnN80M0ql3K0IHUJA30k967yXUiKTzTchejy0hjPNrC0MNIsCAXMLBDb6OiajCezsLTB48IEqmrq4Pq6mrwmQ/NK1vBYx44rguabkHODtRMzBYKhPEpYz+SkIi4V1VRjEfISTh/GUDW8cHOZIFCWhwcHicuj8QXNzUwDR10HWPgVFG+SFUUomioR3HMyF/wc185CSsMDb+q/QKlrrFO6e0frvvw5z4XT0xcbu/bd0uY1ySDJIG3tYHX09PF3vzmr2F8clKEBnR3F9y0OOF8bmkYMqo88JzAooGpjCtQOt2kFMY1zfOEi2mK9OQNt337dkwUfmgpBo4uBBK64eseY6ZlKbaWhMdVDqcsHTKuA3WAdiwGjKjSxbywg8G7VQkkF/FnSE4Yks554KlDO1aUjAoRl1S1CodlBLcNGuTx8qbTIkAUEFY8CU2tK7GcDfhEAdvn8PDDj0LCUmDN2tVCSlM0rEeENrFAEsJKFhKTRMkAmBdUuMCoflxWlrUnmjHVsUiouxhbQyHn+OB5WSBZe1Lywu3H4iYkk9aiPCwqQlh4oI7LoO2CpvSlF6+yB4fGugmHS160dq3b2SmiskPMTRIIcsbmJx8F9v7Fndtow5zruomaGhmRXxDPpSadI/3HHNNj7AhX4aZDz0BCoTDkM2jbeAmYngMZwPAAA6g43cLdcRZQ/FJHSUl+LmTbiiJQGZlQEYPqF1j7nkM668Dw6DjE4nEhEfWeHgDDSkAmMyzIKpFIgMcVME1NkKrYXwEDClriFGBAuQI0bPAovhezRJ8qg4jnlKKDg2IVxEAaw3AKVQNQ0DyMNcMCKRDOFcLCB4yq6kpVwnj0ogtb/+HKF1/5P7fc/v2/HB9X0FFe8kgwtQCLGpRcxvcV3/dT4Z9zIwHGtMlEs0VC0FBzbjh9+HBcU1XqudMiNUA6EkZGvOqenp6hGbs3nIWwBpyKNfX1FXs6aK5L0CNIbAUaYytgYyIOh8fHwKBGYATHSYQTD+l7tjKtECmC/l9iwNFS8EVQjGiEhy5M18mXqqayL6aTV35akAhGZMGBhIU/wM7loLW5CRTNEF7BbCYNw2mMm3JFCk6gCnM4fuIEuJjRoZmiDj3zHfAFF2HFWVTvgvr8wgaF9eyxRA6GSERURoKeWJHjFEZChy3S0Kngo3QJ6BENChviulRRhTTnOaKfyLmjEgYFepnxspdc+T///u8/jWf5mJJWMzMfhKqi7oO+6YIBhSJql/n1mWz2EF5gzDqflWSxK1QKKY1jCAosEhhTKSVsAj9v2rSp7IvZ09ODU87nqey6WDxuTaTTeEcGcSJTQYeqqqoy/r9iDggqsj7mDywGlUylxMysRHpREo/VV6GaUnhFXR28StGhx5mAB51xaObngcItyBAGXGEQK1uODggKzx7eTDghxaTEkx+GLpQ4vrzaWeEeOZ+090SN6qXIK0pYuC6SlOc4gY2IBhKS7zlQY6kQX1EFhFTL7rNhZD0a8BlkfAZpxxHr5mwbU5ggpgPYLoDjUSF9cYwTo4G6iNvAGhKc+kJiQnuUqLyK10vDpDXp7cQYLcFUgqjwxOC4Am7FcmpBlW5FVROMMSxONnm/wlL3EuKTwWOcfP3r/0GhTB+WpmnMwbNaBOGTB7HIJvOzC6ybVNpeJwXOyiGXs31d15acTWwYK10Q4BpVgds5OKEwmNAsUEAXKgnGXtXbjpAqsoaYWbNEJQ95iqSkNBUlpmLXNOo5zA+9kyESrutOI0hVBlirGA6mQKKqSnjukIACu5oPvsfAdTAdKAhQRdUNU3uwfr1I37FtYagX+xS1uAn4tidCNoTwiba6MEMMp6CQqoAFpaVFLFxQoYIHaf8LXramsnFY4cPiQX9V7gXqobIerb7nKYQUDxoMKz8SH/Nw5oGgWvc5hgVOPcmHFjeTIiltiaGturFhQutTH9Fs/vX+pyDpcTgCHLZs2AAxl0OKu+ApHno6ADjqtWfpSk8JWpOBoIUkqWCZ6WOMpu4UIzWSV1k1qAUo//KAeZ4Ihwg03ED6MxUCCQsJBae6CoTEAgKUNeuR1HB8IWG6mGTuIomFxIYqp4gcVYB4uJwLDNvIIpFRAN+1QUW1kIGnadq5k5qDJ6m2WvTppVckT260fcU1DaPEzb+VAnQxVTcu8pH+RXT33mnL33PPPQx/UhV1o+d6I/hdf39YoqVsYLZ5Fwa+5VR9MSejA8yf++nNiicgk7EuCwqphiqEbnAcewi/27lz54JkAMwFCqVYhoCD48OqRBJeWLcCfjs0BjH0ylECOdSOFQLq4phRioCLiqfER3JAj/SUihFNgJZqpIzNihJQNORBSlL5XkRSoBw0ArPHhcUD38U3QQ4j2qe4fFSH5s4gSh+NWzqolIjmJRjzQ0hQHqcWkpPjQVJEw/+kwxqJjWHIRGD3Et2ERBqdoriuW7CeWSVRUUc/VShXCPGyhKWB8JUtpjmjCZdSGhTlLgGCZ/K5ikUUFlAHVTD57CyAoXW3CB4fOT2aZR5rcVXylrqN8MHYeXBNVTOAl4OshkymAfVNACFFLD05WiZuR6s9FMLExARg+stcKlAQzBfkvlDXlEkPoB+oFlQTL59ggK0KnKIqrU4tg0Z+tG95LjDXwehS8SLY6gwYmAqFuKEFr5gJVYkY1FYloAZfyTgxMKcxFms+cOBAPY5lLsn+i0pYSOSYZR6LmSu+1/Odl773za/H4nLa6GgpCSvEDIFVGBogEpuWseAghDEssTrvDXEgAwMDs7xphWusINYlmzA8EaA6CU/6Gfh1+iQ8ZvdCSndBAw5xG2MWTXBLBv+TIq/Zo+CavHzCKpZXiJHlmCpTLPewFALhiuS9AkO5T1QRs8XES34O+lMGymH4QntU9AUMGJIYc4VvEI3/qAIC98Fzc+DYOdG9CcNGFUKtY8eOLbhgUSEJi6D7nRmmuXoo43UKkTeXetz39RI6beC9Q+Nf8UF0YI4T1vEJStXOA0h7sKjAp9j8t4KBfRLy6ZxMJv1kMlmxpDnsuiI+ePAk5zAsVcK5wNd8FNTUcWwlXRY42b59uwuO81iQ93kmML2XqHHo9xX4t8OH4cPPPA3/1Xca6sVEScOEngNbcUTuW2GgLqSe+WJoUA5ULJn/Fy5dFCLfmU+9iI9qIMPs7GmkNVknSyY1R+phRdW+KGTZHHyPehKlN5CXIDGsyXDmSxXEhSk+CvenvVCyCvx7pV+EorpIwcPjpFhxC88dhjNguo4uEq0x1EFhnE2wCX5OpeaIuA0G7u9+x7RHHv9mxnH2L5nAxkjb9nMeewDgfG+ybEXFjst1PVfDhLV5ABtzMMayG6sfLtlnMB+czxDxqfnQ4GThyqb1cGHChCcy/TCcy0JGVcCnFCzXB0p8ITksFhZK75lbKAgp8Vtlb/38rU1KjSUbtVUGFbu6lBKiKJxrunr48OCutY7j1tbW1i4ZjxOlRAt6AS4OfEX0+lwwTExMVHz7CnbYqAQIIfv3t85qWzN6J1kGahQbXlhlwlXJOFyaMMBVCLjUAN3TwcRijgtdqWEZRYGEhSWsFxoVmcBYik/H4uhZ+4m6qsSu4wePo0j80sbGRowmKn0jYmRukSS/tra9xHEcNKvwqfJP5TfoDJcX6g5nZKXHyGH8vHcOJYvLRVgBFCyfJjjnc9bpsdFmUTVgD0oyGBYosGQeCvOBVyLE3rIATEJhTPHhv4YPww9Gn4Ffjp6GMWxA61IwXAI+5eDOsqUiCt3orhefo7l/sx590HhVqpWydLOsc1WOSlcIUo2M1s1aDERtbsUcBtEuQwg8NrS/LfjYKrMZgvk1eNHSG9auPal4Wcd2PRu7u8gJXHLtya65hX+uzBi5nx2bGJMVDiqzzRJ7wwbqFTi9YZm4AkrhswuiFHYR6L7ONW4Bt+rgruFB+OyRI/Dz4QyYsTow0HZEfPAJJumezYrfJexLM+QNlloPISsmaNhKbIk1JpG2ONkk5FxJfqZYZweAXbjrd4/eTOPx9Sp4j5ablsIZRvwtPBT5OD2HgAHLhb7HqpGwhDDfqhGl8kmNtatN74n95MK1z4OalWtgwqZQpcahscYCL5cDT2OgMAq6h0X84FkFJC3ZsGIpQqYonVMqId6uIsjM57XMJ89njK/N5bzqQsGgErIzMIpmrucexM/YGy26TPi37/k+wWqJ84SiV8293MtsgQF083FLUkqZqqmQnkg9iZ+xOoN8jJ86db1fVaUIaXGpBB79/OcPies9ewRdcyhVLtq6dWvBWelMpF1OXO7rBFobW2DD6hZoaowDx+h2hQX5gFg1oKj0Idx5Z74gUNnyu+OEiZuTKlkp6Ujm1AUq01QaDaqB+dHtZ4yqyD6kRIZhDidOnICnnnpqWg2t2SCqupX7Kmdb+ceE0l9QrvmcsGFxX9N18Bn99V9e/+ebkrX1m2OW+WT4c8l5SzmhOccRUeyybdAZT+4wP2e+8NyzGgo9a4hmZQSc/Ju0qwv41q1bsaDxkoFbqNh+mcAkd8pJ0a45CcVlKGgylYONuW+5FHg8DZyga54L1z2SVmlrKSvwCqoczBfB5QlqSok95dVpn4s6iKSAklVTUxOsX79+sv/hUkE+ES4WKhQ4SijmHSkKbP7irXfuzk2k74qZsdBNXTqeh3PuzZTYzAVpwTkFrI9dqGvznOoingFRzLDiZ0R0L/K8OZG652XnNaMILaMUj3huhfWYxK0b5uWdxZsjKAATAElqqoJCkM4yV1VOSmhYb102kmWLHUpYAlGyknW3ziGVMBCENJVUcSAvo5S+eGhkuC34aWfJfTDu2wqlBW1YPT09YdFDmlBV6QLaOscBgqJzfdHqoLtuNseBiyDMuQPVgCm7m/S4fuMHP6jv7r67bb5FAvNyCREXUwp1cwkcNYz5qdthy7ciwBzVhRCOg6dBtFfgrLeA3WUwCDNUCyeL5kUM0sVexRD9HaWsaNE/UmRbhTx60UTrQq9C+8wfV6F9yWqriGj0/jljdJfQVIX7zHdy2Qy6M3LlrINqP1XUYje7OKsKofp8JQpsYKRWKs6oDEw4rpuwDJENPh9gI5P873RCYkSFVWjmq2TtIRVAd7y5VXZ1XXaWOhrOF/O7JaI13MVcJ1OG6OnLnEkQUgIrRF64ftQOFm0bVghREonWnJcoZE+LLlNMeisUyiAj8aPHWY7au2PHDrpv3z6CgkhHR4fYcFvbVDGDrq4uPDi+CBVHA8FYuKY5V7ApY2F3/JnwCXMxDXOG7c87IjDotzY3dWeu6hXH/IgFgKKqzLcrTxDzSX6er4T1bIBQ2zCFBYhoIjHTJJ7eQbq832iRPEPZRVquWwxTzTOmk1r0c5T8EHK7QYNjZVo3bDnGctTVrq6uyYV6enpgLpg3YeG5wTIoibgJtTUJyDIFDM0AdYaHvvQeqlRt5cCfKrYc5qV1ffIz1TQogDvrwFHZVcb3maMSZRGSB6YwH6lQurKLbSPob1lhoCeWze3Z4Lr2/FTCGWq/EWyshBEekaMudQYKSTTFlivYDKKMKxdVJQO/kHCSCGDcVDlewmLfy+DTKBmQcDuFiCxKMsWOPSrp5a8fldzypbipbj6B2iulLHmMoqNPkAcp88Lpjh07Jtfv7e1VWlpafJWQd6YzudcMDg1QXTNcVVcdhZAn6+rqJtAoqyjKv3/sYx87Lfq5FrnvK1XTHXRNAcsyIAMKqMQEFV3OkXpUxaAo6lrG+Rker8igdUWhjWGh63nA97LZab3NlySiz52w68kZF87zfU5YeSr3rKBgo4O5rVpVRecxni1A/f0lKCKLlSRACtrlcnWhFloFliqoss0hzFNU5CyUpD8XL2HUuxgNvWAhOeQfT7FjzVcBi52HYuvk1+uK2rCQ2GTnHHzA9vf34wVCASH/qScO4GMf+1ibx7zXZHM5yGSzk9saS6VElHx9ff0AANyxc+dO3IG34DXdsdiX9NuUCwIk43slww0wVMs3DJ1PEeDuOYyPkMk66Oc4sBcc+MSEJYTRUVGMas5g5KyGqZ8zUEKVLJ98CjVmzVf9SkXc59vAJKLLR4350WoU2IW6vr6ebNy4Mck5H/jJT37Sks1mE6dPn+aWZRHbtmlvby9uqzWTyfiu6/oK2h7CMs6O42CkgFqOR7ViFc/CXKpZE4LnOQ6WmCkF3/cJZzIvb7a5hLPH3XffbUxMTHidnZ1nJbwYpctv9/woeGpPJVFOk7Ao8NR8ysAUgjePo51H5D05derH/rrVG5/u7u5Wip3zqFpTrMzwnFBkEyVLzCxQekyp0shRFZGEDSskSeUb2EtJX4WWK3U8+fasKFliYOvY2BjB4FbDMIyjR48+duONN9qKotTgbyh1SQM9ehAjEqKSv29KqVqOHUwGs1TkhXWhZwvGWVCPtRQ4J7brHMCPW7fOLayhTIizRymNJxKJ+dv35jmjhP3CZ0LV6u/vn7yrDN/niqouQODo3BnL87AJ1NyAxljO2FBjY2PRmRMtG1wRokKEJdELRpAXGclcI85nHEqZIQckYsdCUoiqi4XCHIqFKRQqKhg1pJcT9S7XQ7UQi2xyzveqqrpHVdWfMsb+U9O0uxljP0qlUp9wXfeE74t7hOeTYKFsg2LASVkBKYKjR0w4d2frJcYKrjMuQxXiOb6Ihl8MeJ4nkrnnC9RC57Ie2u7u7P6h/HzGGcUL7/j2kgqlzZOw/NraWplOBN3dbXznzl1006Ym3tHRjcbJM6454/MogH9GCGdlIGZXmGTBi+xhsZOReUgo2MYLXxhUGvXiyTGVM6753uOYdYAsVVNTg89m+/zzz3/V+973voLz9F3vetdLVVVdRQjxGcPKiXOD6nN143wGzX2suk+Ibhlc181uAO0FHD1NZZ4LAipW5C69D+ayWMxY/9Of/jR+/9fun5PhHE3X2E+lHLhunBvG/PKiqEcURr39efd4WTFTWE0nUAlFnajJkyM9JyMj5nhtbU5kEnR1dc20PSJrbAtJpoQHZj4wDDvwwGJfOk1dkwGruaen52TwlfglJKnCE0mhSskxTZcwJp1Rcu0gL0ccVvlSPi6NGnfBsALR2AFAU0I1BqWSPG+Z/DzVlnCqiUQ5kmApUonGX+V79iilImwifzvR95kIq9QyxSqiRn+XYRRIkvF4XKQOPfroo7GOjo7x2tpaOjIyIi4Efm5paeHj4+O3ZTKZK/G0Rs9fdJtBdkhpqP2Pf0XUiJovhp4EUDu+n7RdlCs8oFp5JIp0xdTSNxnzMzSdnTimu3qy6sVVY9NcaWWC+r6iJA18EmDgGhr8WLGJi3lxrrtmXpNaYTnuOSp2oIluZ8Zttu3dy/e2tQXSBt74/lScgSSbhphb7TKlCVv2IRnNQFrotQkzBoR3aUEks23btgnVtcYzvHHg6VjGXfmjL33hJofzL7zgRRekH37k4Q9Qvfrwlq0v/fGRIz8+uG3bGZ6kokApYnpcEvYeDD8HSkaQBYW99WbZtAXPyRmTR4TbcHCy4+DmFIwxAzvng27oQFVdlLEpFMgZDY8oV3UtRgq4XWnziS5LQs+aLDmDRCGN1/nLzXXf0bpehY5BHpuMNQuJS21oaDBvvfVWf8eOHfy2224L6tCF8+z222//0X333ZdVFCURNluNPoixrjY6xWY0c6gAO+ap++wjAG3cZzvJ52/53pRZzC9P1eTcJRzLr3FOdu4UaTxnqgvhW3NNc1o9cmRujndOWDwez4YTdsGM6bKcjh63VnEOzZxz0Q0Xj2/v3r3aJZdc4sxq2AUCcNFmaTO31HUT62Ac6Gc/8bH/XNlU+9DaS9Ye++2vfv/elc0t72s+b/jBrVu7sLhBxchLkumQiX3SMxND4wMtBx55+E2b2i98xd7xo9mf/fLeVVe85HI4cfLh/w2w5SIAGAzXmcPO5DqBoiZCHkSMVuVsWyjw7X3iMRGmcHHbxfD4Y49BVVUVnL/+IjDjdRW3YZULEkpvaL9CwkJSyY+WL1fCyo/Gzw+BkIRZ6FgLBZ0K51ggEIh3uSv8b3x8PIkSlGEYimmaStSriSoikrDneRtmOn4VewPC/BCqOTuJiJMhyD0aUTRTtPzZt2+g9JWl4Jl6bCIkkoJPXYWIOI/hQ6cej9e+8IU43tkbnAnP9T7Tu/kbX/rGYzk6eqHLnZMf+MBfH10oFUnTtJiiqOzTn/zUf3zja1/75E2f/MS7VU3Dygsf6unp8efjgXRUx+UuLaqzhrYWfvz4cW18fHDbmtb4JemJ/rHT/Qcv3rBx/Udi1ZvuvmPX7d/i/Dq7UqQlY2fWxOpXnhoevDCuWEa9tsqrpXX3W771eLV66V872eRQfX31z0+emFtlh0nVKHKcHFxsWAhAkbQo9rQCgo07yiQUUa8hTxoSaTOeC4ZJQdPQkIBdpbF9PNra8BatnN2qFPHlp+WQiEoqcxaj6lX+MeQb06PbyN9vdBtRw/wZ8WkRtRdVQUwfQlua7/t+b2+vnMfRe1tsIJ1OMwxvqK2tvVPTtNOU0ktVVY2HHbG4pmnUMIwnC5WZiqKSsS9E1YmmhkWJmAcljeSyHhYw72R6bORNX7vln/eks9krW1ZfsLOzszMbVirFSYcBecjMMN6fWjtgj6K3MD0bosEcpng8kc1MpD9hc++WbHrkrZoWw+j6j5QKUpsPmMt0JPCEpa8Ero0q3F2pEzLUD/16T0+PaARTjooo/b9v2LxZue222/DJ5WFag+OU4OyQsVavXs1NSx83TSsbs5K/tcyqC31Gfh2L1963buxXXr4Z2feCLsCI2UZLvOhFL6oFgIGcZzvcNMZGJ8Zof6afruTV5/ksWz2SPaq6vlI1PDJ8ecOazSKGTF5j/Iw3/q4SEStS7RFPfhIEaeJlI5QDxZpY3AFKDdG4Cmu9llvWJTqhgwkeds8hBHJZBxijwPHFCWSyaGSe3XmZad/lhHBEScTJS/kpZOvCY0fpC0lNBnfKUIjouqKrcwi5bLTZazHDfHSf4Xh4LBajGzZsOP/6669njuNQXdcZ9llEbSCTyaQOHDjAVVWlsVjsix//+McfHhkZiedvt76+XtR4wwf6QhKWGP327duVN771HS/f8+TBf9L0RKdhxB/H7zs6OqBQ2pCsq87AG1SJ36ZxsAyN/JEbc/8p7OwksHr1auEy55ypb/nAO3978803N+P35ZIVLrdjxw6Fc2ZxTjK6rpiMezqls9LMZg084wqHRDY1PnH5JRe95skhaCLESSchWdfT03M8XwTPhyKePBwDKtEaTciXviQYavv27XDnnXd6pknT0dSj6cc8+ZEN9adipxJDu0jcfDo9rtHTJ8aPeXDoUEfnTp/ibK8QcjlNMN3p071Hrer4uGk4CrcHwU+vU6pa6jLxWJr4zB/y7di9mcFTarGxF0JojI3MHJkPh/ZNVxCWFTfAtQm4uSlj+Hw8eBQ0UJWYaAeGZdRUGgNNjQNb2N4iM0JDMS9E9PgkQcukapnSgzYuVGWlgRwfDHLdQuEFkrBkiRxcP7ofJLnBwcGoyoh9QzEeS3v00Ufv3bt3rxPm7KKnHe1XSkNDw08+9alPvfU973kP7+/vv2/79u04PVhkX9jmXt2xY8cXdu7c+Q9Y0LFAtLxAxRJW3/zmN/O+kVSNalgxKoLFvAR+v3fvroJXWD7BdVW1gMAFXPGrgTC/uvrMwpUUMxN9ytBh9v73v9/p5ly5+4H9VbMYHnM9P8e4zwhVqn0v5gEkalFKKyR+JhLuvCey53HVdT2H6gabyLqJtA2gWtWbH9nzCB4gL1XrftOmTcxhTBN5AGizBOAP/sd33vDvn9/51gfuvrvKsppQ727AZQttRz4Bj8ARGk82+gyq9WcOZ5ssq8lVtdo3DQyMPA8fMx//+Mcrdv1ra1XxVOQ8ZbiOa2VynKixBpLLrHEe36P7tt3ie9mN1fsfrW668so/PZr/0GG0OBPYto2qNNofg+MLe+YJhY75YGoK5FIpOPrMYbAde1ZkdebJC8cjeu/pouV8JuuA6+MExrF4lQ1cnQV4EfUs+pIkEE2fGRsbK1r9QUImNku7GBIVqnz4dzRuCyGlPNyelPxQLcxkMvro6GhidHQ0ju8jIyNVAwMD8ePHj7/qa1/72hbGWMZxHG1iYsLMZrMx27Zj+J5Op5Ou6+L74EznoBI3rPAxv/zlL/eOHXrs26f7T/6J5zng2hMlc8s6O9FYL0aguwppUJKxVzigVw8cjJ9hm+GgEObH0g997zM3fvtLf/2fdY880pxImFfMoh4UJZp6Ouc7/Uwx6zPu6mafrB09dGiisbu7O9rZR1xFy7IcgH3zMswbKh1RFMLSLlEO9Kb3D7PYwOmccvDxJ/ZnUEUt1ggDjfZBfXNehZVlqMo83vvAeROHHvl2pu/pb/3klz/6eW1LIqnmimcpywm1Dtb5Wc68NGNDhOkPeZqnusR7QFVjJ5DozhyDMiVyz1IlHBkZETNE06q4whzVN8hILmY4Lh26u+0FTf8Ya0kSNzby1J+86Q9xy1PV90KGwFzv1tb9066l9G6+/vWvP+04zgk0CyiUcl+09wrWNBUNLEZBS9uQHRyFdCYzKW2UFwBZYBlRctkDYnDQEyrUragBM2mAkdAgXi07w0xPmA4CUKEiRCbXj1ZFkMUB/UhhwGiD1uBYpgeXSilJqpVIQjIPUZzLkKSi8VtSSpPnQxJWVEVEr20ikRCEhgJGMpkUUlw8HufJZJJXV1eLd8uyRFpdOp2uPXny5CZKaQZzY1VVFZ5D+dJ13VMUBb8/Q02sOGGFMT78sV3fXl2TPlb/6+9/1bPHToMVj5XctiyH7Dgswxg8ks7Y31eo8cC6dYE9KTqZ0G6TsPQVJ4Yz7z1y8vSL/+v73/qrl25a/cuZwlQlEa1bty7h+94qKxZTiJL+XU3jyYlE7YmUogyOY4jDQhjdFcWj6K1tbjW8y1/UYLesdaxk/Xjv9muvPYSkNNM+cWIK0YqozrGnDte7umHbShz6R50/OHj48FVVtQ2j5Rx7XaOWWXNB/LxLXpzcUF3nkdomb+j661dhkmlFQxxkJ2pNS0xQoEMq+DHDcrWGZvLnVDn1z1n3GVq3wrl8/+FffHr//v1a/pz2fb+kHTHqTgxarIviyOIWHh5NwYlTA9DQ1CwmIm5qruqgHBaOL5dFqSELE+k0pFIp8PyAMM6mUkjKKACYvywSHeb7nTp1SqTIICkNDw/DwMCAeKGKJ9+xLjsS3fj4uJDMhoaGxLq4PL5wXSQxqZ7Kv0PSJ1GEqjxpbm7mDQ0N3LZtDT2JIhacUqzOIN4R+H0mkzkft7urhDFz3oQlbRCKaWS4VU2az7uYekDBtZ0ywxqoyn0162RhHEXubDarFFB1FE55ds1FF/851+t/XWVVDSBb9/R0lySb8DfcTo4AqfMcbtbUWC9jkL6Egf2ideua6jo7O2funTgHeNSrJoRbfaf73LGxsfb0RG6VnbOTYXjDjESBg0IzlqJq5rqXv/WhF7z8DS9U61b9y7r1m3+oaImDp9LZmlLr47EfOHCAnu4b4qf7BgfHRnJ/MDw8lmU+ufinP7WrUHqp5HGPjIyI6+04/RYDlsCn9shwarz/9Oj9qbHME75nZvr7U79PpbIPnTx5n3iYy3VxHJppVG/cuHHmoNpJ0Sz45AMFn2pggwoux9gkRfQanCthRYIDoKmpBVauXANViRq49JLnw9q168Gy4qEEVGD7Syr3IICUNvF6mGaQL49EhCSEJIzEhCQWEH0gtSFJ9fX1CYJCEpMkJ9VBXAZtWfjCaHd8R1KMSoDyMxrabdsme/bs+VI6nW4N48WQqCZjySKf+UzpdxUzure96A1DH/3K9wY3/PGVDZSjq3O8pJcQKw/iO6Ukxrl+q2FoJ3K53H1XXXWVEzXIHj8u8g2BqJy/oL3zQULoS9GTgyg3NOC6666zb7v19lwsYX3q9OnRow1rnn/Td//tu/1vf+tHgrOXd3Nj89aRkfODtipzhEoM9LlBy4oNb3jVH/3Z2Ne+9qO/a/KpX45Ug4bMb333/zmi+4rLPLxZmtqej1HzN+LvX+/ubiRcWVdiE2IfGzdutO+6867nX/PWa4Rt4Gc/+1nrq171qlMLkVaiaY3iXqqtre1PjecGEona/Z1/+r6NV1/9MiHN7dnz5I5k8qKhjRtJnnuT8F277lVNQ9+ydevWn5a7PxpWcieKDrZPgRhJUIwYKBQrsc2COUSF0Eg+IUolomEJh1UrzwNV08B1HaitacS686KWPG4fqx1Nuf2DAFb0sM7V2F8o9GC+joMoZGQ8kg9uF9U4lJBkv0O0QeHxpNNpQTao6kmCw3f5PRIcro8Eh2PD3/B7Wb+tgCFfPBgNw0iNj4+riqKYUVtafm34mVAxoyvnO6hHVNX2RQ7dJFvOrBISouvx4e3bt2duuOGG8TMn9PHJkWLKyrvf/S50k8zmKnK+g+O9lmtsrD6O+3njVW/sLeU6rQRUNWEQbqW3b98+du+996rvetfrUtdsv0YWECx7RilCMQTY0dGh33rrrRrm53FvXKN+qqxYNElWeM6QrPA6VTzpThBWULoHJVaU8D3PJ0hW6PHBKgxbtlx8Cslqx707znhIJpNJ4nOGRvWyYgKRMhCoEnqcgEcU8FUrjECvTKMGDJtwXQau44uwBs/jwIU2I6fM2fUWzhZIEtJYXogYkHCiv0dDPZCg8Dd8Se9ivpEeIUk/aldzXZfhMpdddtn7E4nE02F4hY+2LPlC+5W0Z810HBUsa7uT13mneQMbAotg0F28doblxf+6qvMYmMJXi8boQkuKpwwVsSQM85JmM+FFvFYXQe2qzrZtVKMwlmlBJi1i796g4gBl1goAzcD9o0ou1K/yU8PFckHGXHDhd/X3s+uvvx5jsHzDN7hpllefPupQwPNLiAgUrrjy4rqDYpvd3d1xQnidis6CYN8MJWHcN97/XUVSckLBpjwIUgokG6zB5mMjCMwzV0opDKTAq+ROptmKZGzWuQqS15Rivr8XqyyBkIQlJSl8DQ4Opn0/KGCAGowQjkMbFj7v8LPnecoiEhbWlEuACxZwQsFxc+Ollu7qCtiUK56eAT+TX/NZAmvteOjh0Gavvcrg0u7u7kZQqWMYRm/41MiftOJK3HvvEwmUBo4cqXdOndoyJwls06Ygsj/jjJxyeW5SBRTvZUSVY1Aoxq84mayjYBBkweOOgeOU11Ur+tQqdH6jUKIF1GbpJcRcMnxPJBIWo0q1zbmfv+/SUfXlx+7iZhTug8I90AgDnTIwiAs6nTIAR5/04mGP9QULvebRw0PahwLbD3rjZrd+dIz5waBRVXDKI8iB+UrBV9QcKUMO5LrRSqXRgFK5TNSjGo1wR/tUNL4rv61XftHA6HKSsJCQwkDWOCGkBtXPZDI5put6VtO0lGmaI6qqDiqKgtEB2ZmM7hWt8siIDh6K5aIXTrnFsbg5Ujooft4YsW1h2MAnfSlDcyo1YDY2Nub27k3NWwLxue9TEXm4OEUHzzZkNVeMs8GojjDlYoEh/YT4iA4i3M8OFu5Q5xoiwcuM8i/120zbmClSP/RQog0LQx5GHcdBG9Yn3/GOd9y0Z8+eBiSpuro6G43/YVL0eNhZR2gDaOeOdtVBVLgsrRQiZiHdi0Sw4rBtrPuExzz34BbdMLhjz1wuRlUtZ2DgGAcoXkiuXFBFFC5ZOp0vFwmySNti7U8aylVVK8tou4zFQxjEKubSwMDAZZ7nmQMDA/zHP/4xVhg5lLc4VjaZERUlLKqguKgCthlUZI2uIj0oZFkU33ezVX7ijEejzDNLJpMJJKvhkfGnZ0qMLIp00J0aPxbxuohtKsqYjyEHW7duFXanuUB2A+KMJTzfGy2nEUcUQSpTj2j8utgmE9VQgDl0MhOhjKyZSVx11VXzbBo7e8g0FEShxgxlbSPwsU9LSZHbLoRCNa+C4NPAUB0dWzS3L/p9obpV+RKNVMWi1Th9EaoWVhQsAaniFeoWHfVERsvIFFo//zzkn5NCZWgixnZZBgfDGuDw4cOfRw+lpmkff+KJJz5+3XXX/ZJz7pimOWoYho3hD4HiTrgqjPGqb+h6o6qphxRFGcza6JNR5tc4IB/oisMYmNn0K/Up9WUDr0LI5QgaaxTXDQrWzRWzr4U6P7BA9ZyzJxKL9MM5BIxoPlv7jtbKmne6zCzXDwhLTubKCpYFa1HB/LxFhYhIfh8lrumEHCROhxVGJ5ePkmyUCKPrhhI3WbFixeODg4Ork8nkeF1d3febmprujsViyYmJiROu605YloUlZ7ji+ySLH2zbsxLVG0zLMoMEbp1gncaKdyoRB65g6miBfkeFlhc1QYojlxMBqKycaoSlsFCF68ogrbmty+bYIPAsAWPHFvscy8kk3fCVjCt7toHnpdzI7yTy03GkUR2B51cWCpyWjhSGQODymK4j04CkdzAMJvVN01TXrVt3x9NPP90xPj7+wzvvvPOzZQ5b9HFYOJWQqGACA92zQVO4KI+7aaBwPSz0GmF80qEjJy7RTf8M6UkGjjqOy3zf8ybS6Tk3Qc0qOaZw0EuUpBGPx7ExbmzatCk3MGBora17kDDmboPiHIOw54Tu7vutnHtiPaA3p5xWIhWCZ/vAQrPbXJvxyIukl12QevFSVYquH1XJZrGdKdVJuvinegdGY5GikkhUfcpvEhFVxWRi8dRvqH6hFlPkdgjb7E07rlDtk3mEsvKCVKVRYpKJztJrGD2XmKaTP14EkhSqd6Ojo2L70Yqw+EJPIAaYyu1hmZnx8fEaLJSXSqVsjCVMpVLqO97xDg9NMDjXo5ktMi0P0+YWlLB0VQcV7VjMA6YwUdumFPbv308UPW5ms5miT2bXHRFxgpipMp+xkTLaxmMjhde/voPv6tmlQO2Jeak4GBDnz7H3q57InJcb5k0kkByWYMJH5XG2j3P+u58epZ6/7ajqJJcp1Icv+vv0kAH5qfA0KDZ6uY1oSAOSChIOhgxhDiEmMmPkOiYwS3UOG5sePHhQkA5+j5HxDQ0Nk44N3Aaue/LkSZEEjb8lk0nmeR6WDxUkhoSH2zt58qTnuu7fWpalaZr2Q4wlbG9vJzJTJUzvi4bAyI/+ghKWhidE14G6WKhh5iAwBD4ESv1eVVWFoQiwmHByDoez2KZU5GtxnppL27RzFdhIc4bfzzanVRyFbECI+djjeJ7hXiYo4z2FJCS3iwS1YsWKyViqfPLE5bEWnfwdSUjasKQUtmrVKkFoUn0cHR3F3F7RIBWPAYkQP2OaD6X0pOd52aqqqnnd1JWNw8IAsfAzBj/Oc3NCUj89PNFsmJZGvDLawhaBZquEU0/Uc5+pUinWo1YTtWZ6LD3HwNGgkqrjuu5MnWCKAUX0NGOirSF6n841zGaihXFx3u+feKL39ttvN6+77rozyhL5vq/ccMMNaqkI7FJt2Gcaq2xMFG1Umm90Loao2icCOyPBpIXIKN8bOC2SPs87iN/JaqH5nsZ85Hse5fhlSg1+xoRn2YAV31Eykuohbh/zBfMJTwKJCVU79P7J5GdcFt9N02RYcbS6uvqR+vr6X+E1Rbs5vlCSq6urS73xjW/8/NatW8fvuOMO/Y477oDdu3d7Z5WwKAH+5e/qmBfEiEeIb3OR67Z3b8ecJi0SB777vpvUdU10uZnr2GzVJiZoM7YHi8V8bhiNZNu2bUNBp4Pr5rpLFHD9uZrAVMY4I2AFNx6ce5gpuC4P+AC55eu3DZuaWYydRbWSEutPe58t5FoyGjzYzpSEU0zamSKfM0MTipkeS5F5IaM4EoW0PY2MjJzRAbrQ9qXah5+RhJA0amtrxWckGHyXY5RVFerr6wU5ol0KqzRE7XCoDjY3NwsJC1VAWYIGgftpbGxkF1xwAc7RH37uc5/7RKFju/nmm+XHknXyFpyw5BPoe90/rx6l6ng8kaSKziCXO12RzsSEUEz3ntc2RLStEkRizwQMbOvu7rZGRvZ427fDnHogVgLnWtDpfD2ECqWl7sVnnTpYCNGyLLLIXpQE3bAGuzSG5xMWEhOWjom2sMd3JCLpxZN1rRD4m6zWgHYquQ25HyntRSVGKfFJyIoN4RhjmOx+5MgR9Ap60TSbXbt2YaqWXG3OF7NiEpZnEFNjjPpO+jHC3SSAPgtdpqX4T6HoGa1lPVtUKQnd496Mx5rJyO7FVZaup9DhddYI61zD/d33W1d0XjHr7rOTlSw96phxs9T59kpJUNFqmXNFviRVLD0lf5mpiJuZ5+FM4ytWLVXWV6dhqWP5W1TtlEb1qJonG53KWCokQbQtRVXeaNVRWRcrGsKA+5VjR+KTtbDkvqSamcvlGNZib29vh2984xvTVL5KhZzMOzgxFIZJjeZkNeo9Q8H+DSH8J7pmBUe5c+Ync0sJvhKxvYyDBnMnLHRacM71clTCkZER2tn56uHrrgsag54NhEX8BQqX980sOSZNVaeSc1w1nOVCosy3Gwp9K2y0aRdTgUpVGZgNJidxmGCNTo/8bcpJfsa+IoRZijij7v/oS6p4SA5IClHpKvqiYdE7qfZFy7zIz/hwx/VxO5JsomlLslRyNJk5So6Fxif3IePeZC2tqNcQzcWwwJh/NLXoSrOTXH311eNENf7btKwnVEJ+Tbgm6jDtLPHYOXXqlHgwjI6OLqilxvdZWbV2sMQFLAFomnZOBY0iwojmeUGmNRXCQlSFXYooSoghaKSiQvQlVbv8Vz4xSalIxl/hSy4nl40W9ssnxii5RvaPRna0da3BMe7evXvB9PeKpH/IQC8KPMMZrPAZe8altmzlVPRGa21t1Rn3B0xTqALTluvoCIz1Ye2qheZusS9METh16pSP3qr5bpBQcUXntG7ay6ArZnaVM5cxLyI4A3mewug25oNCUlN0u6VUJ1pA4okW08svEVOoCYeU0qLLR9N15Pr5BBX9PSptRaVbXddb5W5gaRNWQDaaptdZVuyEy9w0ZN0Skz54WiaTzUnG+EBnZ6cTNrOQQDUAcz3wvrHwC4whmSs8hU62zi5FoFdffbWNEfjV1avi832ia6qKeZ9zWlfnmuUz6XIvNoyF7av47ELpgnOFgE7JfJtWuc1ZS45kWp2uqZdUIwvl9MmXGlHJ8smqUEI1QhKMjLOKEpZcvhhh5udoyjFKIosuH3ovF9xSUdE4LFVTnzIt/RKVaZ6jy3IN8wsYrBzKy21EYOPWee8OL175u8xbdTFqSVUWS0WdrhyCrjxL7aBont0rSjRRIolKhVJlRETzLguFg+THtEWlrXxbWnQ84b4W/HRVSsISZ8dIJvaqqrEbdK4AkBkDL7NZm3G/9CNLJlLOWyOkPDXTIlhttGKlkylt5TQ8v8WbgJRAcPqwN+G5AF3X55zreTYhCwCihVMWTl6w+tkzoJAUmB9kSvNUtkJ2pahUlq/yRb+LLpf/iu4zPz4sfyz5UtpCoiKzQRq0r7q8rXfr8897+Km4dsDamD5SvCxvcEJs251sn1GosSieiFwOQ/+xvMTcKYu6HvFd9xH8jD0Biy2naVqyu7ubYrHgue6rsTEo/seBbuCsPCnzDOg6MKETYnxS4U3MHAY7Byho65f2/tllP2/btm0CzjEISUH0wcEO2xwrh0y+yrXCTE7SeYZU5NuzotJToehzkkdKhUimVNR+KbKaKbg1/zijUfoLjYo+vlEk3ME53ZJK6bmT1TMyjOhAvoS6uRlGS8XOOKVLLvJgQfFc8eItRfCIXUras4oRS7FwiijKNdbn28/OGQkrKml1EcKGkkm2eqM+o5RSVRXXiKIYxSZA8FTAkAR6hupWrMPOfGxCuVwK22hxXbfmTVycseUJfC54A+exj/CvyC+Vu+SFpCuJYlLSTOpiIXUwv1V9KRWxQDjDNOnunCMsifjAAMs+mS06eukRVBSvSaH0vALeO461cEQULqWG8HJQIahjjiHL5XLmli1byg49yAFxvTLk1Xic5dA7OVLtuvONzPWw5O5cT2/Y9BKB0RGFsNDi2865FsQ6S5CqTKEuNKWQbyMqZ3n5muxkE75HxzCfyRvdfv52aIGgznxDez6pFFIbo9vLD4mIImpwz/8tSqqyk85CY8EsumvWrCkjUFM0W1VnWyrY930/l8vN6o7gJCC8mRteLGMZy1iqqDhhoSrX0dHh7du3ryzD9UxlaBw3m0UH83yM7p7nYqf7GcMnVGxXvYRsMdJrtViYDNI9K1jofUtLevSZNHOuYKG/C2IRLhSZIZey2PczSY7z1SYWUyWseAxU6DGcNvJIjzEuvXT4na/gwoIgzjhjPeG77fkaURXQ1EkNkF944YUklYpFe4YXPFNhiVW/TjfWeuCvnSn94/jxpiyuU1Vdjanr/TAPYOVV9D/NrmdOAJH/hSolm4p3WSTQeauEmbBMC5RXrEPWJ6OUO+vWrcP7cQHSkjBmIbJZWQiDcHC9QLmOqpOI/IJ2+ZMRJ6lcXqhUQh0MqizIpOT5TOBo+Ra5HVriXojGYRVS6/IRXa5Q3mB+8GlUtcxXo6NJ0AuNSu6BfPOb30zatl2bSqXGOOeWoijpzZs3Z7Zt2zZ5t3R3d+t79+7FrG7/ju/8IOd7WeyiikQmwl/QvoWk1tvbq/YA+KauXjSBhayDbs1iP6i62bZe9t2g67rhu7myRTQ/aAb6XMRZ82w6jpNdrM470ajvpeOjXvrgRQhYVorAdymcYKu6pUxYwqP3k5/8JHnq1KnnmaappFJjl3meOrZ//4Gqf/7iF4dVSlXG6GONjY2/3LJli3rTTTddnBo8uRGArLzllltqOzs7Rftn7FUYblN0af6Xf/1Xi3sO1UP27ujooNu2BZUUsJh9W1s337Sph8pi9uGTYdqZ9T0/zTmUFSeE29n0kpdkK3BKFtBCuKCdb+DZDim9BM7jyjGW4L9ncd0uUuTekD0dMQG+cNzl0iMsSRTYKUd0ywGAH+J/t956q2ZoWsJ13TpNUziSDRbIcxznIs9zVilEeUQ3zXfcdNPnaNw0fexDZrvOYd91tf97yy2rKHgPJOPW0zWJav+mm7qtD3+4E0sdy8nlR7VJWbweiQ5VOyQf/Dvnu3HOPBEO0dubwJAIlkeOoqJIbW3K2L69a+IHP/j5vGetuIBhE4rZ9mTFkrZYrBRL95YotLk0gSmfDlm0VMeoZy6/PlShJg/T1y1fgij0m1QJPS+oH4UqYVD3XAQhz+ewCu6fRwrpRethlVPOJloGRr7k+ZGqpjyH+aEKhYJJo9Hzuq5jLXcsArjhQx/60B/V1tb+pqurK1PKXDNXVFTpzCeKUOJBNQOlJyFBITo7O1GCmSYz3nTTTVZv/yBvampqtCg1PQKNdir10EUXXpidyKU/evRwX5Nh5S772le+dlFqPJXd8Xdd6z/x8f/zSHV93XHUEjVNPWESOmFUNYzs2rVr9PzzzyeNjY2C8RmDEeZxFnbpKHYX887ObRNIah5xWnfs2JHaifaUSAT+2ehtuJjATj9nS0LAfcM5hOnR3QGJGKYJmobF7CojZEiiiDZ6oItr0ywXBCuV9vX1raivr/+hbdv/BwA+g9oQdsip5I4q2/k5mNB+gXY9k5HQctKjOodt2dEIvnPnTiyfKtWw4wWaKIo0H8Rdd90V4xluHug9oCeqEmpdUzU2i13nuozGqqurKM9d1ts78att27aduummm199y823Xs19O+b53oZv/Nu3Xptzc4T4rI8Cnegf7e9du3Yt0TQNyVSfmHAu6OzsfPwHP/hPrNrgiNEX6Ncu9PRN+0jb3jZxLFExOJlMLrZzr2JgjKlnSyXknKt1dXXn1HmTkl1ALJJgKlPVoZCXjy4xspLSF2MM22cqfX19v/7+97//8o997GOitEqlyQqxSJUSzpRO8GCkYa4QsclAUpTSpNSGKtw111yDomZ+ou3RyOc98sPq1U0/t237fj/rr+ZEcVzGMKp+rU/gPNtz0nEz/jzKaEN2PJ1xHXetx7xEz7e/d//YYN8LP931SbelueXnhPK+EZZOx2IxNtY3NvKRj3wkg8Gl+ccnO75cfvnlwnBtuw4joPhIbnWPZZXu7m5x/HnSZ8G7mqmMZ/0MuMSBgZHTIgdy69apDGpKqUUIm7GC6mxBCKn2fX9gXhvBK4OTtczRycloWRbWnV0yLYIKVUOIIpqqEqhpQaPTQnWu8lWs2Qa1SnVOC+upS0krGoEe3WY+sYWlXwqm4ER/R+QHf0bVTdEVS1WDNnSRhh2iFhRj0NTUdP4//uM/vjibze6DBcKiEVa5iExiKb3gWz5TT1Wz5/yMGldS4glVwHHkicjPT+TvE9VAC0BJp9MUgK7PZSee8Hz/0nQunYiZ8QtVX2/JTLitsZoqestt/3fkX265uUHTtcFMNvOQYZquweiDR44ccXbcvsOMjcVW11g1/T7wGAOvNhzLGT7+KElHvaNYorm1tdXwuE8Y933Pd9JI4tu3b588xozvUzAqn/qziE2ml1gMWGmUIhn5PZYjNk1d1DpHQpGNJKJlWaLLF9tWfhIzAlVCBI2k3uSHGBSz11UixkqSpNynrMslbXhr1qyhW7ZsgV/84hcr77nnnt+sWLHiRgD4l/b2dnWu7bzOGcIqE1G70rS/CyGadxit1iClnTzbliS3fcUm1pe//OWm1MSIrmoqt0CtZcAESf7zV/652WPso0MjI322w1Kaqqpf//rtH3I8t4Eqap+TTZ9wHOeZ2tpak3OeHh0d7cPA2RtvvHE0zzv6+FNf+MLluqIqpmbqIYm7LS0tFInNJEThPsUAXaW3t5d2d3eTiJf0nLIFnQsoRlhSJczlcnC6/zRYFvb6i4GqTnWWifYtlMjPzyu1r6hDQQu732BnHJRy8gv9zReF8gejddtlj0MpXeFYBgcHcVzYf5A4jiP4pLW19Zf4vnXrVrZ7926oJM5VwpoVZuFqJVJiyy9DE6qk6JrEbfVFfpI2N7jxvTeirW1aM8M777yzwZtwGrjn1Nq27SiGgWVkL2WMNXiO06ubZuKOf/saHx4aOWkYMV+39Mu//tWvnkyYpmMZxq6YqvV/54471juEjL797W8fwm3ed999I6Ojo3poI/Bvu+02eZxnEHWh44icl2l+fUJIarGN7lKq8DxvPJfLlew9GC2tUqlxRu1Qk/sKq7wGrTCLd9KRXjshfQgJCCuBYh30QAJBgsGWWih1Sa+c7DGY7+2T+8eWWcVUvYmJCeGFlC3gpYooJR9EfoWFqISUXylUxk9JSQ23Lc9xvqFfVVUf4x9xGzhGbHKBrzVr1pCxsTEFYysbGxv/beXKlT/6/Oc//3vcxUKEODwnCGsWKBjHVQDCuooLIblFLoxQ7fBvVDM7OjqQ4LAZh2jIEcFPo3/ceuutsbGJCXVVTc3KeDz+8Pjw+GrXdWot3fp3bsZXDo2MfW54ZOjkR//mb8dra2o2PXjf/RNjqdTz/+Zv/ranqirxUG1tLfrQDzPGcoyxvr2mmf3qe97jlnvDIImhtEYI8VDiw95y0maWF/qxYKCUllQdcNJI1aiSmDy4iK1K1hkNvipcVE8a1nFMKGElEgle31BDcrksnDx5gmN7dmxAOjAwAOPj40R2qpFdl3Gy48SPRocjYSBwPXmsUSLNZrMwNDQkyoVL4ssPR4iGO0THm69uyh6Isis05ucKF3FgiMsvoKlgbKUkKSRKHIPszJNMJnMNDQ1/9vd///f/UeDUVhTLhDU3iAsbXv5pyWlygodq5jSpTS4kpZ6IGiedCGhvEz8V2ulnPvOZZHU8vuZYX5/nZtxGn3hJzrmrKMq6bDa7IjClWA0XZjLsizffvI5QOEwptV3P9YGRZyzdcp109phqWVtMTc943L7nggsuGGpsbKSXXHKJg25ozbKQpLx8aS1fvY6SIX6HnbqxO/e3vvWDOZ1Q13XpYqR2FISoNhoSVd40QxU7lDQYzmPsQYgT28d27Q4GnAHJZLN0bGyUjKdGfMZ85fDhw6ShoUEQBEpFYX8ClE44TnbTsibLJ4UdamT9f1SrIJVKBYQTRjEhOUmSI6ENC4FEqWI1hfC8sVDaE++T3kvRTp5lMhkWkbbEvnHrYeNWKglJVVSgCgUj7KiDY0VSqq6u/qqqqvs8z6MDAwMMx7BixQpumub+RCJx6KMf/eh+tFk1NTWhk2zBMhbOKTfysx14E+ero+hJ7e7uFjd8udsJAmR748Ouq9dpWrULsMLzPFYdqzkPfJ86jh03TTMJXBjuM4TDK0dTw/0KUZrSmcwW13VvbmpqeFShdMyn9JjruryhoWH8bW97W9DjvARuv7272eW5AxpRXnjttW95+rbbblNra2sZhq9s2rSJ53tJ5TGfd9557Zzz36CnNW+TYtrecMMNj/q+vxknX34FD1S7cOJFVSipbgl1jxJgqObxM1VMw7Bw4uM4OAHKqSLGBE42RxVCwfNR6AwMzUJS8RkYqiakHSQWqigoQSEp8PPPX0fGxsdwPDlN04QUrqgqT8Tjpq4boGtaoGoFdd4wNhh8YOA5rohiRdWRM848jt/iaDnHaHwkIakqJpNJ6qNUZ9tIQkIa0ib7DBJwHGxy6gjy9TkDD60Qmi4kPElYqqaCoRkQC6UllOgsK/YvWdt+mPmuoqqqVVNb2xozYzU+4Q+uqF9x6q/+5q/uKXXd8aG10FHu4rot9A6WUVngjYGTHSc55mzhd21tbYIM8HNnZyfeNLMit5Fjx2qP9PY2+57nW7HkpYTA2tqaGt+Mx2tS2XQvIQSlt6SmaQOappmu6/62ubn54dBRMXH8+HG0ya2Lx+MPxaqra7M576FMNrXhwx/4wMFyk59vu+229zuO8/2BgYHB3t5e0tLSgvmlXBL2jTfe+IjneZsdx2EokRQirEKJueJvSjj2D5/cJRN9KkXDWsuyFE3XUFoSqTqTSb6Mg0oVcFzHjVnWeCo1cai2tiZn6kbWt93HcrncMFB4YkX9ipzt5QY4Y17LqlXn9Z06ddzStEGtqoporsuFCldTs8HJuTWM+c/v6+vXqULO45y1DI2MgO17xDSMCxhjJmOsDoeZdRzww+cTkpUgMuCga7ogl5Agp+VECoJW0DCvB+qmYYBuGBDTDSTYh9Lp9M/xXCuKEq+vr99k6Dr1bOdYzLQON9Y33v+xT+74+QyXCh0+NNp+Hs0G8iG0GGSFWCasZy8CY1xEHY2oovK6s9ncaB/84AeNLVu2NKBtOBaLuZ7neTU1NRO/+93v3ub7/tXxePy06/ORweGRC1uamgasmNXHOHdz6fQJRSGeZVmpTCaDKgTxPG+0ubm5r6Ojw/7yl7+8urq6+o1/8Rd/8YVi+77xxhsf9n3/+bZtM03TChIWHm6gugWTHQkJyU0QkKaJSS/CDEJ1SapXaPA3DGOUENhrxeN2Mp7Yn51I37VixQpU7U7X19f3v+lNb8KEfqgU8qTBeE9Pj9rX17fuyJEjyf7+fmbG42sVla4cGBigyUTyskwmY6SzGR63YhcwnxkM+L6EFQOiKGA7Nji2A5lsBjRV4bW1dajG9au68XAiHn/0izfd9IC0j5UAbW9vP8PpIUkpYuI4q1gmrGVMqqKS1KIlePbt28exLNBsn6Bf/epX6/r7+5V4TU2Ln8u1MoCNrijiz9GOszmVTqWqk9WtruuezuVyW+rr6zdyzjGtY1hVVdt13cEVK1YcHx0dHYzH44cefvjhBzOZzHqGIdWKQqNVLpGwpLSBNiBUn6RKaFmWZ5pmyvf9Z9AQrmkaqrgHM5nM3pUrVw6ZpnkIYGLoo3/8xmESBv2WmCvivMiJjfYafMfzEzl3XGRH7NgRrNXVBfs6OgJJuL+f7JrqjBxlv7LPraZpeIxIwrO6Hmhfkp93794t1u3o6CBt/W1kX9O+BbU7VRLLhLWMWSG/wCFKCthpCFU3OXHD8iIzToDuHd36byd+q9XU1NSl02mjvr7+Ss75hZ7nrR0aGvISiYSr6/rzGGMrDxw4UJPJZCz0ToWGYuFVw8/4UhSFUUoPOI5z/9q1a9O6rp9UVfVgXV3doTVr1vRfd911J6MJv0WgtLe3k3wyWuj4tmh2h1Tz+/v7CdZ9e/rpp8V+MZ6pvb0d34UoGQZlBt/BbsB/0N4O7bgsfgylI3zgYFnxhfbyLhb+PxDBoMpQ86OoAAAAAElFTkSuQmCC" x="260" y="275" width="220" id="machine-photo" opacity="0.92"/>
+    <text x="370" y="405" fill="#4f6584" font-size="8" text-anchor="middle">IMP-MC-01 机台本体</text>
+    <!-- 机台电脑终端（在机台右侧） -->
+    <rect x="520" y="285" width="55" height="40" rx="3" fill="#0a1525" stroke="#4dc3ff" stroke-width="1"/>
+    <rect x="523" y="288" width="49" height="28" fill="#0d1a2e" stroke="#2a4a6a" stroke-width="0.5"/>
+    <text id="terminal-text" x="547" y="304" fill="#4dc3ff" font-size="6" text-anchor="middle" font-family="Consolas">PARAMS</text>
+    <rect x="538" y="325" width="18" height="5" fill="#2a4a6a"/>
+    <!-- 鼠标 -->
+    <ellipse cx="582" cy="322" rx="4" ry="6" fill="#2a3a4a" stroke="#4a5a6a" stroke-width="0.5"/>
+    <line x1="578" y1="318" x2="572" y2="315" stroke="#4a5a6a" stroke-width="0.8"/>
+    <text x="547" y="342" fill="#5c7392" font-size="7" text-anchor="middle">机台电脑</text>
+    <!-- 维修特效：烟尘 -->
+    <g id="smoke-group" opacity="0">
+      <circle id="smoke1" cx="320" cy="310" r="4" fill="#556" opacity="0.5"/>
+      <circle id="smoke2" cx="370" cy="305" r="5" fill="#667" opacity="0.4"/>
+      <circle id="smoke3" cx="420" cy="310" r="4" fill="#556" opacity="0.5"/>
+      <circle id="smoke4" cx="345" cy="300" r="3" fill="#778" opacity="0.3"/>
+      <circle id="smoke5" cx="395" cy="300" r="3" fill="#778" opacity="0.3"/>
+    </g>
+    <!-- 维修特效：火花 -->
+    <g id="sparks-group" opacity="0">
+      <circle id="spark1" cx="370" cy="305" r="1.5" fill="#ffaa00"/>
+      <circle id="spark2" cx="370" cy="305" r="1" fill="#ffdd44"/>
+      <circle id="spark3" cx="370" cy="305" r="1" fill="#ff8800"/>
+      <circle id="spark4" cx="370" cy="305" r="1" fill="#ffcc00"/>
+      <circle id="spark5" cx="370" cy="305" r="1" fill="#ff9900"/>
+    </g>
+    <!-- ===== 操作员1（主操作员·守在机台电脑前） ===== -->
+    <g id="operator-1" transform="translate(600,370)">
+      <ellipse id="op1-head" cx="0" cy="-22" rx="6" ry="7" fill="#d8e8f5" stroke="#98a8c8" stroke-width="0.6"/>
+      <ellipse id="op1-face" cx="-1" cy="-21" rx="3.5" ry="4.5" fill="#e8d0b8"/>
+      <path id="op1-body" d="M-5,-15 Q-6,-12 -5,-4 L5,-4 Q6,-12 5,-15 Z" fill="#c8d8ee" stroke="#98a8c8" stroke-width="0.5"/>
+      <line id="op1-arm-l" x1="-5" y1="-12" x2="-9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op1-forearm-l" x1="-9" y1="-6" x2="-11" y2="-2" stroke="#98a8c8" stroke-width="1.3" stroke-linecap="round"/>
+      <line id="op1-arm-r" x1="5" y1="-12" x2="9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op1-forearm-r" x1="9" y1="-6" x2="11" y2="-2" stroke="#98a8c8" stroke-width="1.3" stroke-linecap="round"/>
+      <line id="op1-leg-l" x1="-2.5" y1="-4" x2="-3" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <line id="op1-leg-r" x1="2.5" y1="-4" x2="3" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <text id="op1-exclaim" x="0" y="-38" fill="#ff4444" font-size="22" text-anchor="middle" font-weight="bold" opacity="0">!</text>
+      <g id="op1-walkie" opacity="0">
+        <rect x="6" y="-16" width="4" height="8" rx="1" fill="#333"/>
+        <line x1="8" y1="-16" x2="8" y2="-20" stroke="#333" stroke-width="0.8"/>
+        <circle cx="8" cy="-12" r="0.8" fill="#e74c3c"/>
+      </g>
+      <g id="op1-tool" opacity="0">
+        <rect x="9" y="-10" width="7" height="2" rx="0.5" fill="#e6b800" transform="rotate(30,12,-9)"/>
+      </g>
+    </g>
+    <!-- ===== 操作员2（支援·有腿部id） ===== -->
+    <g id="operator-2" transform="translate(1000,370)" opacity="0">
+      <ellipse cx="0" cy="-22" rx="6" ry="7" fill="#d8e8f5" stroke="#98a8c8" stroke-width="0.6"/>
+      <ellipse cx="0" cy="-21" rx="3.5" ry="4.5" fill="#e8d0b8"/>
+      <path d="M-5,-15 Q-6,-12 -5,-4 L5,-4 Q6,-12 5,-15 Z" fill="#c8d8ee" stroke="#98a8c8" stroke-width="0.5"/>
+      <line id="op2-arm-l" x1="-5" y1="-12" x2="-9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op2-arm-r" x1="5" y1="-12" x2="9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op2-leg-l" x1="-2.5" y1="-4" x2="-4" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <line id="op2-leg-r" x1="2.5" y1="-4" x2="4" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="7" y="-8" width="3" height="6" rx="0.5" fill="#e6b800"/>
+    </g>
+    <!-- ===== 操作员3（支援·有腿部id） ===== -->
+    <g id="operator-3" transform="translate(1020,370)" opacity="0">
+      <ellipse cx="0" cy="-22" rx="6" ry="7" fill="#d8e8f5" stroke="#98a8c8" stroke-width="0.6"/>
+      <ellipse cx="0" cy="-21" rx="3.5" ry="4.5" fill="#e8d0b8"/>
+      <path d="M-5,-15 Q-6,-12 -5,-4 L5,-4 Q6,-12 5,-15 Z" fill="#c8d8ee" stroke="#98a8c8" stroke-width="0.5"/>
+      <line id="op3-arm-l" x1="-5" y1="-12" x2="-9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op3-arm-r" x1="5" y1="-12" x2="9" y2="-6" stroke="#98a8c8" stroke-width="1.5" stroke-linecap="round"/>
+      <line id="op3-leg-l" x1="-2.5" y1="-4" x2="-4" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <line id="op3-leg-r" x1="2.5" y1="-4" x2="4" y2="6" stroke="#98a8c8" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="-10" y="-8" width="3" height="6" rx="0.5" fill="#3498db"/>
+    </g>
+    <!-- 信息栏 -->
+    <text id="anim-info" x="850" y="380" fill="#9db7d8" font-size="10" text-anchor="middle" font-family="Consolas"></text>
+    <text id="anim-alarm-info" x="850" y="395" fill="#ff9d92" font-size="9" text-anchor="middle"></text>
+  </svg>
+
+</section>
+
+<section class="row">
+  <div class="chart-wrap">
+    <h3>片内均匀度趋势 <small id="cu-n">Uniformity % · 红色点=超规格</small></h3>
+    <svg id="ch-uniform" viewBox="0 0 720 220" preserveAspectRatio="none" style="width:100%;height:220px"></svg>
+  </div>
+  <div class="chart-wrap">
+    <h3>束流趋势 <small id="cb-n">Beam Current mA</small></h3>
+    <svg id="ch-beam" viewBox="0 0 720 220" preserveAspectRatio="none" style="width:100%;height:220px"></svg>
+  </div>
+</section>
+
+<section class="cards2">
+  <div class="table-wrap">
+    <h3>最近晶圆注入记录</h3>
+    <table id="tbl-wafers">
+      <thead><tr>
+        <th>完成时间</th><th>批次</th><th>晶圆</th><th>配方</th><th>元素</th><th>能量keV</th>
+        <th>剂量cm⁻²</th><th>束流mA</th><th>注入角°</th><th>均匀度%</th><th>颗粒</th><th>结果</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <h3>报警事件</h3>
+    <table id="tbl-alarms">
+      <thead><tr><th>时间</th><th>等级</th><th>代码</th><th>描述</th><th>状态</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  数据库 <b>fab_implant</b>（implant_wafer_records / implant_machine_state / implant_alarm_events）· 每 5 秒自动刷新 ·
+  本页数据经 Nginx 反向代理转发 · 明细见答辩技术文档第 9 章
+</footer>
+
+<script>
+// JS 错误捕获：如果有任何语法或运行时错误，直接显示在页面顶部（红底白字）
+window.onerror = function(msg, src, line, col, err){
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#c0392b;color:#fff;padding:12px;font-size:14px;font-family:Consolas,monospace';
+  d.textContent = 'JS错误: ' + msg + ' (line ' + line + ', col ' + col + ')';
+  document.body.insertBefore(d, document.body.firstChild);
+  return false;
+};
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function fmtDose(v){ try { return parseFloat(v).toExponential(2).replace('e+','E'); } catch(e){ return v; } }
+
+async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(u+' -> '+r.status); return r.json(); }
+
+function renderChart(svgId, rows, opts){
+  const svg = $(svgId); if(!rows || !rows.length){ svg.innerHTML = '<text x="20" y="110" fill="#5c7392" font-size="13">暂无数据</text>'; return; }
+  const W=720, H=220, padL=46, padR=14, padT=12, padB=26;
+  const vals = rows.map(r => r.val);
+  let lo = opts.fixedLo!=null ? opts.fixedLo : Math.min(...vals);
+  let hi = opts.fixedHi!=null ? opts.fixedHi : Math.max(...vals);
+  const n = rows.length;
+  const x = i => padL + i*(W-padL-padR)/Math.max(1,n-1);
+  const y = v => padT + (hi-v)/(hi-lo||1)*(H-padT-padB);
+  let d = rows.map((r,i)=> (i?'L':'M')+x(i).toFixed(1)+','+y(r.val).toFixed(1)).join(' ');
+  let area = d + ' L'+ (W-padR).toFixed(1)+','+(H-padB) +' L'+padL+','+(H-padB)+' Z';
+  let html = '';
+  // 网格 + Y 轴刻度
+  for(let g=0; g<=4; g++){
+    const v = lo + (hi-lo)*g/4, yy = y(v).toFixed(1);
+    html += '<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#1a2c48" stroke-width="1"/>';
+    html += '<text x="'+(padL-4)+'" y="'+(+yy+4)+'" fill="#6f8bab" font-size="10" text-anchor="end">'+v.toFixed(opts.dec||1)+'</text>';
+  }
+  html += '<text x="'+(padL-4)+'" y="'+(padT-2)+'" fill="#7e97b8" font-size="10" text-anchor="end">'+opts.yLabel+'</text>';
+  // 规格线
+  if(opts.spec!=null){
+    const sy = y(opts.spec).toFixed(1);
+    html += '<line x1="'+padL+'" y1="'+sy+'" x2="'+(W-padR)+'" y2="'+sy+'" stroke="#e74c3c" stroke-width="1" stroke-dasharray="6,4" opacity=".8"/>';
+    html += '<text x="'+(W-padR-4)+'" y="'+(+sy-4)+'" fill="#ff9d92" font-size="10" text-anchor="end">规格 '+opts.spec+opts.unit+'</text>';
+  }
+  // 面积 + 折线
+  html += '<path d="'+area+'" fill="'+opts.fill+'" opacity=".18"/>';
+  html += '<path d="'+d+'" fill="none" stroke="'+opts.color+'" stroke-width="1.8"/>';
+  // 首尾时间标签
+  html += '<text x="'+padL+'" y="'+(H-8)+'" fill="#6f8bab" font-size="10">'+esc(rows[0].created_at)+'</text>';
+  html += '<text x="'+(W-padR)+'" y="'+(H-8)+'" fill="#6f8bab" font-size="10" text-anchor="end">'+esc(rows[n-1].created_at)+'</text>';
+  // 超规格点（FAIL 或超限）
+  if(opts.markFails){
+    rows.forEach((r,i)=>{ if(r.process_result==='FAIL'||(opts.spec!=null&&r.val>opts.spec)){
+      html += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(r.val).toFixed(1)+'" r="3" fill="#ff5a4e"/>';
+    }});
+  }
+  svg.innerHTML = html;
+}
+
+function load(){
+  const t0 = Date.now();
+  Promise.all([
+    jget('/api/kpis'), jget('/api/wafers?limit=15'),
+    jget('/api/trend?param=uniformity_pct&limit=80'),
+    jget('/api/trend?param=beam_current_ma&limit=80'),
+    jget('/api/alarms?limit=20')
+  ]).then(([k, w, tu, tb, al]) => {
+    // KPI
+    $('now').textContent = '当前时间 ' + k.now;
+    $('k-today').textContent = k.today_wafers;
+    $('k-total').textContent = k.total_wafers;
+    $('k-unif').textContent = k.avg_uniformity_7d!=null ? k.avg_uniformity_7d.toFixed(2) : '--';
+    $('k-pass').textContent = k.pass_rate_7d!=null ? k.pass_rate_7d.toFixed(1)+'%' : '--';
+    $('k-fail').textContent = k.fail_7d;
+    $('k-alarm').textContent = k.open_alarms;
+    $('k-lot').textContent = '当前批次 ' + (k.active_lot||'--');
+    const st = k.machine_state;
+    const stText = $('st-dot');
+    stText.className = 'dot st-' + st;
+    $('st-text').textContent = st;
+    $('mstate-line').textContent = '机台 ' + st + ' · ' + (k.state_time||'');
+    $('st-reason').textContent = k.machine_reason || '--';
+    // 图表
+    $('cu-n').textContent = 'Uniformity % · 最近 ' + tu.length + ' 片 · 红点=超规格';
+    $('cb-n').textContent = 'Beam Current mA · 最近 ' + tb.length + ' 片';
+    renderChart('ch-uniform', tu, {yLabel:'%', color:'#4dc3ff', fill:'#4dc3ff', spec:2.5, unit:'%', dec:2, markFails:true});
+    renderChart('ch-beam', tb, {yLabel:'mA', color:'#8f7bff', fill:'#8f7bff', dec:2});
+    // 晶圆表
+    $('tbl-wafers').querySelector('tbody').innerHTML = w.map(x => {
+      const badU = x.uniformity_pct > 2.5, badP = x.particles_added > 50, bad = x.process_result;
+      return '<tr><td class="mono">'+esc(x.created_at)+'</td><td>'+esc(x.lot_id)+'</td><td class="mono">'+esc(x.wafer_id)+
+        '</td><td>'+esc(x.recipe_name)+'</td><td>'+esc(x.species)+'</td><td class="mono">'+x.energy_kev.toFixed(1)+
+        '</td><td class="mono">'+fmtDose(x.dose_cm2)+'</td><td class="mono">'+x.beam_current_ma.toFixed(2)+
+        '</td><td class="mono">'+x.tilt_deg.toFixed(1)+'</td><td class="'+(badU?'ov':'')+' mono">'+x.uniformity_pct.toFixed(2)+
+        '</td><td class="'+(badP?'ov':'')+'">'+x.particles_added+'</td><td><span class="badge b-'+(bad==='PASS'?'pass':'fail')+'">'+esc(bad)+'</span></td></tr>';
+    }).join('');
+    // 动画同步：检测新晶圆 + 晶舟计数
+    if(w.length>0 && w[0].wafer_id!==animState.lastWaferId){
+      // 机台宕机期间冻结所有晶舟数量，修复后恢复
+      if(animState.alarmLevel !== 'ERROR'){
+        animState.lastWaferId = w[0].wafer_id;
+        animState.currentResult = w[0].process_result;
+        animState.currentInfo = w[0].wafer_id + '  |  ' + w[0].recipe_name + '  |  ' +
+          w[0].species + ' ' + w[0].energy_kev.toFixed(0) + 'keV  |  ' +
+          (w[0].process_result==='PASS' ? '\u2713 PASS' : '\u2717 FAIL');
+        animState.cycleStart = Date.now();
+        // 入口晶舟A：容量8片，每次取用1片，空了自动补料8片
+        animState.entryCount--;
+        if(animState.entryCount <= 0) animState.entryCount = 8;
+        // 按质检结果分流
+        if(w[0].process_result === 'FAIL'){
+          animState.scrapCount++;          // 不合格 → 废料收集仓 +1
+        } else {
+          animState.exitCount++;            // 合格 → 出口晶舟B +1
+          if(animState.exitCount >= 8){
+            // 出口晶舟满8片 → 打包送往下一道工序 → 清零
+            animState.exitCount = 0;
+            animState.packageFlash = Date.now();
+          }
+        }
+      }
+    }
+    // 报警状态同步（与数据库一致）
+    let _alvl = 'none', _atxt = '';
+    if(k.machine_state === 'DOWN'){
+      _alvl = 'ERROR'; _atxt = k.machine_reason || '\u673a\u53f0\u505c\u673a';
+    } else if(k.open_alarms > 0){
+      const actAl = al.find(a => !a.end_time);
+      if(actAl){ _alvl = actAl.alarm_level; _atxt = actAl.alarm_code + ': ' + actAl.message; }
+    }
+    animState.alarmLevel = _alvl;
+    animState.alarmText = _atxt;
+    animState.machineState = k.machine_state;
+    // 报警表
+    $('tbl-alarms').querySelector('tbody').innerHTML = al.map(a =>
+      '<tr><td class="mono">'+esc(a.start_time)+'</td><td><span class="badge '+(a.alarm_level==='ERROR'?'b-err':'b-warn')+'">'+esc(a.alarm_level)+'</span></td>'+
+      '<td class="mono">'+esc(a.alarm_code)+'</td><td style="text-align:left">'+esc(a.message)+'</td>'+
+      '<td>'+(a.end_time?'<span class="badge b-info">已恢复</span>':'<span class="badge b-err">进行中</span>')+'</td></tr>'
+    ).join('') || '<tr><td colspan="5" style="color:#5c7392">暂无报警</td></tr>';
+    const dt = Date.now()-t0;
+    $('now').textContent = '当前时间 ' + k.now + ' · 刷新 ' + dt + 'ms';
+  }).catch(e => { $('now').textContent = '刷新失败: ' + e.message; });
+}
+
+load();
+setInterval(load, 5000);
+
+/* ===== 离子注入产线动画引擎 v4（机台图片+电脑前操作员+维修特效） ===== */
+const animState = {
+  cycleStart: Date.now(),
+  cycleDuration: 5000,
+  lastWaferId: null,
+  currentResult: 'PASS',
+  currentInfo: '等待数据...',
+  alarmLevel: 'none',
+  alarmText: '',
+  machineState: 'RUNNING',
+  entryCount: 8,
+  exitCount: 0,
+  scrapCount: 0,
+  packageFlash: 0,
+  _lastEntryKey: '',
+  _lastExitKey: '',
+  _lastScrapKey: '',
+};
+const $ = id => document.getElementById(id);
+const _waferGroup = $('wafer-group');
+const _waferLabel = $('wafer-label');
+const _waferResult = $('wafer-result');
+const _qcResult = $('qc-result');
+const _qcLight = $('qc-light');
+const _beam = $('beam-group');
+const _source = $('ion-source');
+const _housing = $('machine-housing');
+const _phase = $('anim-phase');
+const _info = $('anim-info');
+const _alarmInfo = $('anim-alarm-info');
+const _alarmInd = $('alarm-indicator');
+const _alarmText = $('alarm-text');
+const _alarmTri = _alarmInd ? _alarmInd.querySelector('polygon') : null;
+const _cassA = $('cass-a-slots');
+const _cassB = $('cass-b-slots');
+const _cassACount = $('cass-a-count');
+const _cassBCount = $('cass-b-count');
+const _scrapSlots = $('scrap-slots');
+const _scrapCount = $('scrap-count');
+const _particleG = $('beam-particles');
+const _terminal = $('terminal-text');
+const _smokeG = $('smoke-group');
+const _sparksG = $('sparks-group');
+// 操作员
+const _op1 = $('operator-1');
+const _op1Head = $('op1-head');
+const _op1Face = $('op1-face');
+const _op1ArmL = $('op1-arm-l');
+const _op1ForearmL = $('op1-forearm-l');
+const _op1ArmR = $('op1-arm-r');
+const _op1ForearmR = $('op1-forearm-r');
+const _op1LegL = $('op1-leg-l');
+const _op1LegR = $('op1-leg-r');
+const _op1Exclaim = $('op1-exclaim');
+const _op1Walkie = $('op1-walkie');
+const _op1Tool = $('op1-tool');
+const _op2 = $('operator-2');
+const _op3 = $('operator-3');
+const _op2LegL = $('op2-leg-l');
+const _op2LegR = $('op2-leg-r');
+const _op2ArmL = $('op2-arm-l');
+const _op2ArmR = $('op2-arm-r');
+const _op3LegL = $('op3-leg-l');
+const _op3LegR = $('op3-leg-r');
+const _op3ArmL = $('op3-arm-l');
+const _op3ArmR = $('op3-arm-r');
+// 粒子
+const SVGNS = 'http://www.w3.org/2000/svg';
+const _particles = [];
+for(let i=0;i<12;i++){
+  const p = document.createElementNS(SVGNS,'circle');
+  p.setAttribute('cx', 322 + (i%4)*4 + Math.random()*2);
+  p.setAttribute('cy', 48);
+  p.setAttribute('r', 1.2);
+  p.setAttribute('fill', '#7fd0ff');
+  p.setAttribute('opacity', 0);
+  p._off = i * 0.083;
+  _particleG.appendChild(p);
+  _particles.push(p);
+}
+// 晶舟
+const SLOT_Y = [168, 155, 142, 129, 116, 103, 90, 77];
+const SCRAP_SLOT_Y = [242, 232, 222, 212];
+const CASS_A_X = 87, CASS_B_X = 692, SCRAP_X = 545;
+const X_CASS_A = 112, X_IMPLANT = 330, X_QC = 570, X_CASS_B = 717, X_SCRAP = 570, Y_SCRAP = 225;
+const OP_HOME_X = 600, OP_HOME_Y = 370;
+const OP_MAINT_X = [330, 370, 410];
+const MACHINE_CX = 370, MACHINE_CY = 305;
+function renderCassette(group, cx, count, color, slotYArr){
+  let html = '';
+  const arr = slotYArr || SLOT_Y;
+  for(let i=0; i<arr.length; i++){
+    const y = arr[i];
+    if(i < count){
+      html += '<rect x="'+(cx+6)+'" y="'+(y-2)+'" width="38" height="4" rx="1" fill="'+color+'" opacity="0.7"/>';
+    } else {
+      html += '<line x1="'+(cx+6)+'" y1="'+y+'" x2="'+(cx+44)+'" y2="'+y+'" stroke="#1a2c48" stroke-width="0.5" stroke-dasharray="2,2"/>';
+    }
+  }
+  group.innerHTML = html;
+}
+function setLimbs(prefix, armLx, armLy, faLx, faLy, armRx, armRy, faRx, faRy, legLx, legLy, legRx, legRy){
+  const a = id => document.getElementById(prefix+id);
+  const al = a('-arm-l'); if(al){ al.setAttribute('x2', armLx); al.setAttribute('y2', armLy); }
+  const fal = a('-forearm-l'); if(fal){ fal.setAttribute('x1', armLx); fal.setAttribute('y1', armLy); fal.setAttribute('x2', faLx); fal.setAttribute('y2', faLy); }
+  const ar = a('-arm-r'); if(ar){ ar.setAttribute('x2', armRx); ar.setAttribute('y2', armRy); }
+  const far = a('-forearm-r'); if(far){ far.setAttribute('x1', armRx); far.setAttribute('y1', armRy); far.setAttribute('x2', faRx); far.setAttribute('y2', faRy); }
+  const ll = a('-leg-l'); if(ll){ ll.setAttribute('x2', legLx); ll.setAttribute('y2', legLy); }
+  const lr = a('-leg-r'); if(lr){ lr.setAttribute('x2', legRx); lr.setAttribute('y2', legRy); }
+}
+
+/* ===== 操作员状态机 ===== */
+const opState = { mode: 'idle_stand', stateStart: Date.now() };
+let prevAlarmLevel = 'none';
+
+function updateOperator(now){
+  const elapsed = (now - opState.stateStart) / 1000;
+  const t = now / 1000;
+  switch(opState.mode){
+    case 'idle_stand': if(elapsed>4){opState.mode='idle_look';opState.stateStart=now;} break;
+    case 'idle_look': if(elapsed>3){opState.mode='idle_type';opState.stateStart=now;} break;
+    case 'idle_type': if(elapsed>4){opState.mode='idle_check';opState.stateStart=now;} break;
+    case 'idle_check': if(elapsed>3){opState.mode='idle_stand';opState.stateStart=now;} break;
+    case 'warn_fix': if(elapsed>5){opState.mode='idle_stand';opState.stateStart=now;} break;
+    case 'warn_walk_back': if(elapsed>1.5){opState.mode='idle_stand';opState.stateStart=now;} break;
+    case 'error_call': if(elapsed>2){opState.mode='error_wait';opState.stateStart=now;} break;
+    case 'error_wait': if(elapsed>2){opState.mode='error_maintain';opState.stateStart=now;} break;
+    case 'error_maintain': if(elapsed>20){opState.mode='error_leave';opState.stateStart=now;} break;
+    case 'error_leave': if(elapsed>2.5){opState.mode='idle_stand';opState.stateStart=now;} break;
+  }
+  let op1x = OP_HOME_X, op1y = OP_HOME_Y, headCx = -1, faceCx = -1;
+  let exclaim = 0, walkie = 0, tool = 0;
+  let op2vis = 0, op3vis = 0, op2x = 1000, op3x = 1020;
+  let smokeOp = 0, sparksOp = 0;
+  let opLabel = '';
+
+  switch(opState.mode){
+    case 'idle_stand':
+      opLabel = '操作员守候';
+      op1y = OP_HOME_Y + Math.sin(t * 1.5) * 0.3;
+      setLimbs('op1', -9,-6, -11,-2, 9,-6, 11,-2, -3,6, 3,6);
+      break;
+    case 'idle_look':
+      opLabel = '查看机台参数';
+      headCx = -2; faceCx = -2;
+      setLimbs('op1', -8,-7, -10,-3, 8,-7, 10,-3, -3,6, 3,6);
+      break;
+    case 'idle_type':
+      opLabel = '操作电脑鼠标';
+      // 右手伸向鼠标方向（左前方），上下移动模拟点击
+      const my = -8 + Math.sin(t * 6) * 2;
+      setLimbs('op1', -9,-6, -11,-2, 2,my, -4,my-2, -3,6, 3,6);
+      _terminal.textContent = 'MOUSE';
+      break;
+    case 'idle_check':
+      opLabel = '巡检机台';
+      const cy = -8 + Math.sin(t * 3) * 2;
+      setLimbs('op1', -8,cy, -10,cy-2, 8,-cy+(-8), 10,-cy+(-10), -3,6, 3,6);
+      _terminal.textContent = 'CHECK';
+      break;
+    case 'warn_fix':
+      opLabel = '调整参数修复';
+      op1x = OP_HOME_X - 5;
+      headCx = -2; faceCx = -2;
+      const wy = -8 + Math.sin(t * 12) * 3;
+      const wlY = -7 + Math.cos(t * 10) * 2;
+      setLimbs('op1', -8,wlY, -10,wlY-2, 1,wy, -3,wy+2, -3,6, 3,6);
+      _terminal.textContent = 'FIX!';
+      break;
+    case 'warn_walk_back':
+      opLabel = '修复完成返回';
+      op1x = OP_HOME_X - 5 + Math.min(1, elapsed/1.5) * 5;
+      const ws = Math.sin(elapsed * 8);
+      setLimbs('op1', -9,-6, -11,-2, 9,-6, 11,-2, -3+ws,6, 3-ws,6);
+      _terminal.textContent = 'PARAMS';
+      break;
+    case 'error_call':
+      opLabel = '呼叫支援';
+      exclaim = 1; walkie = 1;
+      const shake = Math.sin(t * 15) * 0.5;
+      op1x = OP_HOME_X + shake;
+      setLimbs('op1', -9,-6, -11,-2, 6,-14, 7,-18, -3,6, 3,6);
+      _terminal.textContent = 'SOS!';
+      break;
+    case 'error_wait':
+      opLabel = '等待支援到达';
+      exclaim = 1;
+      op1x = OP_HOME_X + Math.sin(t * 2) * 0.5;
+      setLimbs('op1', -9,-6, -11,-2, 9,-6, 11,-2, -3,6, 3,6);
+      break;
+    case 'error_maintain':
+      smokeOp = 1; sparksOp = 1; tool = 1;
+      exclaim = 0; walkie = 0;
+      op1x = OP_MAINT_X[0];
+      op2vis = 1; op3vis = 1;
+      const mt = Math.min(1, elapsed / 1.5);
+      op2x = 1000 - mt * (1000 - OP_MAINT_X[1]);
+      op3x = 1020 - mt * (1020 - OP_MAINT_X[2]);
+      if(mt < 1){
+        opLabel = '支援人员跑来';
+        const r1 = Math.sin(t * 14), r2 = Math.sin(t * 14 + Math.PI);
+        if(_op2LegL) _op2LegL.setAttribute('x2', -4 + r1*3);
+        if(_op2LegR) _op2LegR.setAttribute('x2', 4 + r2*3);
+        if(_op2ArmL) _op2ArmL.setAttribute('y2', -6 + r2*2);
+        if(_op2ArmR) _op2ArmR.setAttribute('y2', -6 + r1*2);
+        if(_op3LegL) _op3LegL.setAttribute('x2', -4 + r2*3);
+        if(_op3LegR) _op3LegR.setAttribute('x2', 4 + r1*3);
+        if(_op3ArmL) _op3ArmL.setAttribute('y2', -6 + r1*2);
+        if(_op3ArmR) _op3ArmR.setAttribute('y2', -6 + r2*2);
+        const bob2 = Math.abs(Math.sin(t*14)) * -1;
+        const bob3 = Math.abs(Math.sin(t*14+1)) * -1;
+        if(_op2) _op2.setAttribute('transform', 'translate('+op2x+','+(OP_HOME_Y+bob2)+')');
+        if(_op3) _op3.setAttribute('transform', 'translate('+op3x+','+(OP_HOME_Y+bob3)+')');
+      } else {
+        opLabel = '三人停机维修';
+        // 维修：手臂交替向上伸入机台
+        const m1 = -10 + Math.sin(t * 5) * 3;
+        const m2 = -10 + Math.sin(t * 5 + 2) * 3;
+        setLimbs('op1', -8,m1, -10,m1-3, 8,m2, 10,m2-3, -3,6, 3,6);
+        if(_op2ArmL) _op2ArmL.setAttribute('y2', m1);
+        if(_op2ArmR) _op2ArmR.setAttribute('y2', m2);
+        if(_op3ArmL) _op3ArmL.setAttribute('y2', m2);
+        if(_op3ArmR) _op3ArmR.setAttribute('y2', m1);
+        if(_op2) _op2.setAttribute('transform', 'translate('+op2x+','+OP_HOME_Y+')');
+        if(_op3) _op3.setAttribute('transform', 'translate('+op3x+','+OP_HOME_Y+')');
+        // 烟尘动画：上升+渐隐
+        if(_smokeG){
+          const smokes = _smokeG.querySelectorAll('circle');
+          smokes.forEach((s, i) => {
+            const cyc = (t * 0.5 + i * 0.2) % 1;
+            const baseY = 310 + i * 2;
+            s.setAttribute('cy', baseY - cyc * 25);
+            s.setAttribute('opacity', (1 - cyc) * 0.5);
+            s.setAttribute('r', 3 + cyc * 4);
+          });
+        }
+        // 火花动画：从机台中心向外飞溅
+        if(_sparksG){
+          const sparks = _sparksG.querySelectorAll('circle');
+          sparks.forEach((s, i) => {
+            const cyc = (t * 2 + i * 0.15) % 1;
+            const angle = i * 1.2 + t;
+            const dist = cyc * 15;
+            s.setAttribute('cx', MACHINE_CX + Math.cos(angle) * dist);
+            s.setAttribute('cy', MACHINE_CY + Math.sin(angle) * dist - cyc * 5);
+            s.setAttribute('opacity', (1 - cyc) * 0.9);
+            s.setAttribute('r', 1.5 - cyc * 0.8);
+          });
+        }
+      }
+      break;
+    case 'error_leave':
+      opLabel = '维修完毕撤离';
+      tool = 0; smokeOp = 0; sparksOp = 0;
+      op2vis = 1; op3vis = 1;
+      const lt = Math.min(1, elapsed / 2.5);
+      op2x = OP_MAINT_X[1] + lt * 700;
+      op3x = OP_MAINT_X[2] + lt * 680;
+      const lr1 = Math.sin(t * 10), lr2 = Math.sin(t * 10 + Math.PI);
+      if(_op2LegL) _op2LegL.setAttribute('x2', -4 + lr1*3);
+      if(_op2LegR) _op2LegR.setAttribute('x2', 4 + lr2*3);
+      if(_op3LegL) _op3LegL.setAttribute('x2', -4 + lr2*3);
+      if(_op3LegR) _op3LegR.setAttribute('x2', 4 + lr1*3);
+      if(_op2) _op2.setAttribute('transform', 'translate('+op2x+','+OP_HOME_Y+')');
+      if(_op3) _op3.setAttribute('transform', 'translate('+op3x+','+OP_HOME_Y+')');
+      if(elapsed >= 2){ op2vis = 0; op3vis = 0; }
+      op1x = OP_MAINT_X[0] + Math.min(1, elapsed/2) * (OP_HOME_X - OP_MAINT_X[0]);
+      const ws2 = Math.sin(elapsed * 8);
+      setLimbs('op1', -9,-6, -11,-2, 9,-6, 11,-2, -3+ws2,6, 3-ws2,6);
+      break;
+  }
+
+  // 应用 op1
+  if(_op1) _op1.setAttribute('transform', 'translate('+op1x+','+op1y+')');
+  if(_op1Head) _op1Head.setAttribute('cx', headCx);
+  if(_op1Face) _op1Face.setAttribute('cx', faceCx);
+  if(_op1Exclaim) _op1Exclaim.setAttribute('opacity', exclaim);
+  if(_op1Walkie) _op1Walkie.setAttribute('opacity', walkie);
+  if(_op1Tool) _op1Tool.setAttribute('opacity', tool);
+  if(opState.mode !== 'error_maintain' && opState.mode !== 'error_leave'){
+    if(_op2) _op2.setAttribute('opacity', 0);
+    if(_op3) _op3.setAttribute('opacity', 0);
+  } else {
+    if(_op2) _op2.setAttribute('opacity', op2vis);
+    if(_op3) _op3.setAttribute('opacity', op3vis);
+  }
+  // 烟尘/火花可见性
+  if(_smokeG) _smokeG.setAttribute('opacity', smokeOp);
+  if(_sparksG) _sparksG.setAttribute('opacity', sparksOp);
+
+  return opLabel;
+}
+
+/* ===== 主动画循环 ===== */
+function animateMachine(){
+  const now = Date.now();
+  const elapsed = (now - animState.cycleStart) % animState.cycleDuration;
+  const ph = elapsed / animState.cycleDuration;
+  const isDown = animState.alarmLevel === 'ERROR';
+  const isWarn = animState.alarmLevel === 'WARN';
+  const t = now / 1000;
+
+  const beamColor = isWarn ? '#ffd978' : '#4dc3ff';
+  const particleColor = isWarn ? '#ffe8a0' : '#7fd0ff';
+  _beam.querySelectorAll('line').forEach(l => l.setAttribute('stroke', beamColor));
+  _particles.forEach(p => p.setAttribute('fill', particleColor));
+  if(isDown){ _housing.setAttribute('stroke','#e74c3c'); _housing.setAttribute('stroke-width','4'); _source.setAttribute('fill','#3a1518'); }
+  else if(isWarn){ _housing.setAttribute('stroke','#e6b800'); _housing.setAttribute('stroke-width','3'); _source.setAttribute('fill','#2a2a10'); }
+  else { _housing.setAttribute('stroke','#1d3352'); _housing.setAttribute('stroke-width','1.5'); _source.setAttribute('fill','#1a3050'); }
+  if(isDown || isWarn){
+    _alarmInd.setAttribute('opacity', 1);
+    if(_alarmTri){ _alarmTri.setAttribute('fill', isDown?'#ff6b6b':'#ffd978'); _alarmTri.setAttribute('stroke', isDown?'#e74c3c':'#e6b800'); }
+    _alarmText.textContent = isDown ? 'ERROR' : 'WARN';
+    _alarmText.setAttribute('fill', isDown ? '#ff6b6b' : '#ffd978');
+    _alarmInfo.textContent = '\u26a0 ' + animState.alarmText;
+  } else {
+    _alarmInd.setAttribute('opacity', 0);
+    _alarmInfo.textContent = '';
+  }
+
+  const alvl = animState.alarmLevel;
+  if(alvl !== prevAlarmLevel){
+    if(alvl === 'WARN' && opState.mode.startsWith('idle')){
+      opState.mode = 'warn_fix'; opState.stateStart = now;
+    } else if(alvl === 'ERROR' && !opState.mode.startsWith('error')){
+      opState.mode = 'error_call'; opState.stateStart = now;
+    } else if(alvl === 'none'){
+      if(opState.mode === 'warn_fix'){ opState.mode = 'warn_walk_back'; opState.stateStart = now; }
+      else if(opState.mode === 'error_maintain'){ opState.mode = 'error_leave'; opState.stateStart = now; }
+    }
+    prevAlarmLevel = alvl;
+  }
+  const opLabel = updateOperator(now);
+
+  // 晶圆动画
+  let wx, wy = 120, beamOp, label, waferColor;
+  const isFail = animState.currentResult === 'FAIL';
+  if(isDown){
+    wx = X_IMPLANT; beamOp = 0; label = '停机维护'; waferColor = '#c8d8f0';
+    _waferResult.setAttribute('fill','none');
+    _qcResult.setAttribute('fill','none');
+    _qcLight.setAttribute('fill','#1a2c48');
+    _particles.forEach(p => p.setAttribute('opacity', 0));
+  } else {
+    _waferResult.setAttribute('fill','none');
+    _qcResult.setAttribute('fill','none');
+    _qcLight.setAttribute('fill','#1a2c48');
+    if(ph < 0.07){ wx = X_CASS_A; beamOp = 0; label = '晶舟A出片'; waferColor = '#c8d8f0'; }
+    else if(ph < 0.16){ const p=(ph-0.07)/0.09; wx = X_CASS_A+p*(X_IMPLANT-X_CASS_A); beamOp=0; label='进料输送'; waferColor='#c8d8f0'; }
+    else if(ph < 0.22){ wx = X_IMPLANT; beamOp = 0; label = '定位中'; waferColor = '#c8d8f0'; }
+    else if(ph < 0.48){
+      wx = X_IMPLANT; const p=(ph-0.22)/0.26;
+      beamOp = 0.25 + 0.55 * Math.abs(Math.sin(p * Math.PI * 8));
+      label = '离子注入中'; waferColor = '#a8e8ff';
+      _particles.forEach(p2 => { const pt=((t*0.6+p2._off)%1); p2.setAttribute('cy', 48+pt*60); p2.setAttribute('opacity', beamOp*(1-pt*0.6)); });
+    } else if(ph < 0.58){ const p=(ph-0.48)/0.10; wx=X_IMPLANT+p*(X_QC-X_IMPLANT); beamOp=0; label='运往质检台'; waferColor='#c8d8f0'; _particles.forEach(p2=>p2.setAttribute('opacity',0)); }
+    else if(ph < 0.75){
+      wx = X_QC; beamOp = 0; label = '质检中'; waferColor = '#c8d8f0';
+      const pass = !isFail;
+      _qcResult.setAttribute('fill', pass ? '#7ff0b0' : '#ff9d92');
+      _qcResult.textContent = pass ? '\u2713 PASS' : '\u2717 FAIL';
+      _qcLight.setAttribute('fill', pass ? '#2ecc71' : '#e74c3c');
+    } else if(ph < 0.90){
+      const p = (ph-0.75)/0.15;
+      if(isFail){ wx = X_QC+p*(X_SCRAP-X_QC); wy = 120+p*(Y_SCRAP-120); label='不合格→废料仓'; waferColor='#ff9d92'; }
+      else { wx = X_QC+p*(X_CASS_B-X_QC); label='合格→晶舟B'; waferColor='#7ff0b0'; }
+      beamOp = 0;
+    } else { wx = X_CASS_A; beamOp = 0; label = '等待下一片'; waferColor = '#c8d8f0'; }
+  }
+  _waferGroup.setAttribute('transform', 'translate('+wx+','+wy+')');
+  _waferLabel.setAttribute('fill', '#0b1220');
+  _beam.setAttribute('opacity', beamOp);
+  const icon = isDown ? '[停机] ' : isWarn ? '\u26a0 ' : '';
+  _phase.textContent = icon + label + '  \u00b7  ' + opLabel + '  \u00b7  ' + animState.machineState;
+  _info.textContent = animState.currentInfo;
+
+  // 晶舟
+  const entryKey = '' + animState.entryCount;
+  if(entryKey !== animState._lastEntryKey){ renderCassette(_cassA, CASS_A_X, animState.entryCount, '#7fd0ff'); animState._lastEntryKey = entryKey; }
+  const exitKey = animState.exitCount + '_pass';
+  if(exitKey !== animState._lastExitKey){ renderCassette(_cassB, CASS_B_X, animState.exitCount, '#7ff0b0'); animState._lastExitKey = exitKey; }
+  const scrapKey = animState.scrapCount + '_scrap';
+  if(scrapKey !== animState._lastScrapKey){ renderCassette(_scrapSlots, SCRAP_X, animState.scrapCount, '#ff6b6b', SCRAP_SLOT_Y); animState._lastScrapKey = scrapKey; }
+  _cassACount.textContent = '待加工: ' + animState.entryCount + '/8 片';
+  _cassBCount.textContent = '出口: ' + animState.exitCount + '/8 片' + (animState.packageFlash && (now - animState.packageFlash < 3000) ? ' · 打包送往下一道工序 ✓' : '');
+  _scrapCount.textContent = '废料: ' + animState.scrapCount + ' 片';
+
+  requestAnimationFrame(animateMachine);
+}
+// Demo mode: URL param ?demo=error/warn overrides alarm state for screenshots
+const _demo = new URLSearchParams(location.search).get('demo');
+if(_demo === 'error'){ animState.alarmLevel='ERROR'; animState.alarmText='AIM-HANDLER-JAM'; animState.machineState='DOWN'; }
+else if(_demo === 'warn'){ animState.alarmLevel='WARN'; animState.alarmText='AIM-VAC-WARN'; animState.machineState='IDLE'; }
+animateMachine();
+</script>
+</body>
+</html>

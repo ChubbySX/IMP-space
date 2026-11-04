@@ -1,0 +1,6 @@
+# Runtime dependencies (Python 3.9+)
+# paho-mqtt MUST stay on 1.6.1: the 2.x callback API changed and the scripts
+# would fail with "missing 1 required positional argument: 'CallbackAPIVersion'".
+Flask==3.1.3
+PyMySQL==1.2.3
+paho-mqtt==1.6.1

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安全登录 · 离子注入工序数据看板</title>
+<link rel="stylesheet" href="/static/glassmorphism.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Segoe UI','Microsoft YaHei',sans-serif;
+  overflow:hidden;height:100vh;
+  background-color:var(--night-bg);
+  background-image:
+    radial-gradient(640px circle at 85% 10%, rgba(124,156,196,0.28), transparent 60%),
+    radial-gradient(560px circle at 10% 90%, rgba(51,81,122,0.35), transparent 60%),
+    radial-gradient(400px circle at 50% 50%, rgba(228,184,99,0.08), transparent 60%);
+  color:var(--text-primary);
+}
+
+/* 噪点纹理 */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;opacity:0.025;z-index:10000;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 左侧品牌区 */
+#brand-side{
+  position:fixed;top:0;left:0;width:45%;height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+#brand-side .brand-title{
+  font-size:32px;font-weight:800;letter-spacing:6px;color:var(--text-primary);
+  margin-bottom:8px;text-shadow:0 0 40px rgba(228,184,99,0.20);
+}
+#brand-side .brand-title .accent{color:var(--champagne)}
+#brand-side .brand-sub{font-size:14px;color:var(--text-muted);letter-spacing:2px;margin-bottom:24px}
+
+#canvas3d-wrap{
+  width:380px;height:300px;
+  border-radius:24px;
+  background:rgba(255,255,255,0.05);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border:1px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  overflow:hidden;position:relative;
+}
+#canvas3d-wrap::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(to bottom,rgba(255,255,255,0.10),transparent);
+  pointer-events:none;border-radius:inherit;
+}
+#canvas3d{width:100%;height:100%;display:block;position:relative;z-index:1}
+#brand-side .device-tag{
+  margin-top:20px;font-size:12px;color:var(--text-faint);letter-spacing:1px;
+}
+
+/* 右侧登录区 */
+#login-side{
+  position:fixed;top:0;right:0;width:55%;height:100vh;
+  display:flex;align-items:center;justify-content:center;
+}
+
+#login-panel{
+  width:420px;padding:48px;
+  background:rgba(255,255,255,0.06);
+  backdrop-filter:blur(60px) saturate(180%);
+  -webkit-backdrop-filter:blur(60px) saturate(180%);
+  border:1px solid var(--glass-border);
+  border-radius:24px;
+  box-shadow:var(--glass-shadow);
+  position:relative;overflow:hidden;
+  transition:all 500ms var(--spring);
+}
+#login-panel::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(to bottom,rgba(255,255,255,0.12),transparent);
+  pointer-events:none;border-radius:inherit;
+}
+#login-panel:hover{
+  border-color:var(--glass-border-hover);
+  box-shadow:var(--glass-shadow-hover);
+}
+#login-panel>*{position:relative;z-index:1}
+
+#login-panel h1{text-align:center;font-size:22px;color:var(--text-primary);margin-bottom:4px;font-weight:700}
+#login-panel .subtitle{text-align:center;font-size:13px;color:var(--text-muted);margin-bottom:32px;letter-spacing:1px}
+
+.field{margin-bottom:20px}
+.field label{display:block;font-size:13px;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.5px;font-weight:500}
+.field input{
+  width:100%;padding:14px 18px;
+  background:rgba(255,255,255,0.06);
+  backdrop-filter:blur(30px) saturate(150%);
+  -webkit-backdrop-filter:blur(30px) saturate(150%);
+  border:1px solid var(--glass-border);
+  border-radius:16px;
+  color:var(--text-primary);font-size:15px;outline:none;
+  transition:all 500ms var(--spring);
+}
+.field input::placeholder{color:var(--text-faint)}
+.field input:focus{
+  border-color:rgba(255,255,255,0.50);
+  background:rgba(255,255,255,0.10);
+  box-shadow:var(--glass-shadow-focus);
+}
+
+.btn-login{
+  width:100%;padding:14px;margin-top:8px;
+  background:var(--champagne-bg);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border:1px solid var(--champagne-border);
+  border-radius:16px;
+  color:var(--champagne-light);
+  font-size:16px;font-weight:600;cursor:pointer;letter-spacing:3px;
+  box-shadow:0 4px 20px rgba(228,184,99,0.15), inset 0 1px 0 rgba(243,220,168,0.35);
+  transition:all 500ms var(--spring);
+}
+.btn-login:hover{
+  background:rgba(228,184,99,0.22);
+  border-color:rgba(228,184,99,0.55);
+}
+.btn-login:active{transform:scale(0.97)}
+
+.error{
+  color:#ff8888;font-size:13px;text-align:center;margin-bottom:16px;padding:12px;
+  background:rgba(255,100,100,0.08);
+  border:1px solid rgba(255,100,100,0.20);
+  border-radius:16px;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+.hint{text-align:center;margin-top:24px;font-size:11px;color:var(--text-faint);letter-spacing:1px}
+
+/* 底部状态栏 */
+#status-bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:5;
+  background:rgba(255,255,255,0.04);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-top:1px solid var(--glass-border);
+  padding:8px 24px;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);
+}
+#status-bar .blink{color:var(--champagne);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:0.4}50%{opacity:1}}
+
+#loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:16px;color:var(--text-muted);z-index:20}
+</style>
+</head>
+<body>
+<div id="loading">初始化安全终端…</div>
+
+<div id="brand-side">
+  <div class="brand-logo">
+    <svg viewBox="0 0 280 100" style="width:260px;height:90px">
+      <defs>
+        <radialGradient id="g3login" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stop-color="#7C9CC4" stop-opacity="0.3"/>
+          <stop offset="1" stop-color="#E4B863" stop-opacity="0.08"/>
+        </radialGradient>
+      </defs>
+      <ellipse cx="140" cy="42" rx="78" ry="33" fill="url(#g3login)" stroke="#7C9CC4" stroke-width="0.6" opacity="0.5"/>
+      <g stroke="#E4B863" stroke-width="0.8" fill="none" opacity="0.55">
+        <line x1="82" y1="28" x2="118" y2="28"/><line x1="118" y1="28" x2="118" y2="52"/>
+        <line x1="118" y1="52" x2="168" y2="52"/><line x1="168" y1="52" x2="168" y2="34"/>
+        <line x1="168" y1="34" x2="208" y2="34"/>
+        <line x1="82" y1="62" x2="108" y2="62"/><line x1="108" y1="62" x2="108" y2="44"/>
+      </g>
+      <g fill="#E4B863">
+        <circle cx="82" cy="28" r="2"/><circle cx="118" cy="52" r="2"/>
+        <circle cx="168" cy="34" r="2"/><circle cx="208" cy="34" r="2"/>
+        <circle cx="108" cy="62" r="1.5"/>
+      </g>
+      <text x="140" y="50" text-anchor="middle" font-size="22" font-weight="bold" fill="#E4B863" letter-spacing="2">佳芯科技</text>
+      <text x="140" y="88" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.45)" letter-spacing="3">IMP-MC-01 · ION IMPLANT TECHNOLOGY</text>
+    </svg>
+  </div>
+  <div class="brand-sub">FAB-3 离子注入工序监控系统</div>
+  <div id="canvas3d-wrap"><canvas id="canvas3d"></canvas></div>
+  <div class="device-tag">SEMI E37 / HSMS · Secure Terminal</div>
+</div>
+
+<div id="login-side">
+  <div id="login-panel">
+    <h1>离子注入工序数据看板</h1>
+    <div class="subtitle">产线监控系统 · 请输入凭据登录</div>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="POST" action="/login">
+      <div class="field">
+        <label>工号 Employee ID</label>
+        <input type="text" name="employee_id" placeholder="请输入工号" autofocus required>
+      </div>
+      <div class="field">
+        <label>密码 Password</label>
+        <input type="password" name="password" placeholder="请输入密码" required>
+      </div>
+      <button type="submit" class="btn-login">安 全 登 录</button>
+    </form>
+    <div class="hint">仅授权人员可访问 · 每次访问需重新验证</div>
+  </div>
+</div>
+
+<div id="status-bar">
+  <span><span class="blink">●</span> SYSTEM READY</span>
+  <span>佳芯科技 / IMP-MC-01 / SECURE TERMINAL</span>
+  <span id="clock">--:--:--</span>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"/static/three/three.module.js","three/addons/":"/static/three/addons/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+const canvas=document.getElementById('canvas3d');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setSize(380,300);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x0B1322,0.3);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.0;
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,380/300,0.1,50);
+camera.position.set(2.2,1.6,2.8);
+
+scene.add(new THREE.AmbientLight(0x7C9CC4,0.6));
+const key=new THREE.DirectionalLight(0xffffff,0.8);
+key.position.set(3,5,2);
+scene.add(key);
+const fill=new THREE.DirectionalLight(0x33517A,0.4);
+fill.position.set(-2,2,-1);
+scene.add(fill);
+
+const loader=new GLTFLoader();
+loader.load('/static/implanter19.glb',(gltf)=>{
+  const m=gltf.scene;
+  scene.add(m);
+  document.getElementById('loading').style.display='none';
+},undefined,(e)=>{
+  document.getElementById('loading').textContent='模型加载失败';
+});
+
+let autoAngle=0;
+function autoRotate(){
+  autoAngle+=0.002;
+  const r=3.2;
+  camera.position.x=Math.cos(autoAngle)*r;
+  camera.position.z=Math.sin(autoAngle)*r;
+  camera.position.y=1.5+Math.sin(autoAngle*0.5)*0.15;
+  camera.lookAt(0,0.4,0);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  autoRotate();
+  renderer.render(scene,camera);
+}
+animate();
+
+function updateClock(){
+  const d=new Date();
+  document.getElementById('clock').textContent=d.toLocaleTimeString('zh-CN',{hour12:false});
+}
+setInterval(updateClock,1000);
+updateClock();
+</script>
+</body>
+</html>

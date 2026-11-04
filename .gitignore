@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+
+# Environment & secrets
+.env
+*.log
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Blender backup
+*.blend1
+*.blend2
+
+# Temporary
+_pkgtest*/
+*.tmp
